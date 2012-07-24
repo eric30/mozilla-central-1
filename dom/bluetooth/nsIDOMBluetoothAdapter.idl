@@ -36,6 +36,7 @@ interface nsIDOMBluetoothAdapter : nsIDOMEventTarget
   nsIDOMDOMRequest pair(in nsIDOMBluetoothDevice aDevice);
   nsIDOMDOMRequest unpair(in nsIDOMBluetoothDevice aDevice);
   nsIDOMDOMRequest getPairedDevices();
+
   void setPinCode(in DOMString aDeviceAddress, in DOMString aPinCode);
   void setPasskey(in DOMString aDeviceAddress, in unsigned long aPasskey);
   void setPairingConfirmation(in DOMString aDeviceAddress, in bool aConfirmation);
