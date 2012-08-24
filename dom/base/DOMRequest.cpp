@@ -235,6 +235,7 @@ public:
     mReq(aRequest),
     mResult(aResult)
   {
+    NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
     nsresult rv;
     nsIScriptContext* sc = mReq->GetContextForEventHandlers(&rv);
     MOZ_ASSERT(NS_SUCCEEDED(rv) && sc->GetNativeContext());
@@ -251,6 +252,7 @@ public:
 
   ~FireSuccessAsyncTask()
   {
+    NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
     nsresult rv;
     nsIScriptContext* sc = mReq->GetContextForEventHandlers(&rv);
     MOZ_ASSERT(NS_SUCCEEDED(rv) && sc->GetNativeContext());
@@ -272,7 +274,7 @@ public:
                      const nsAString& aError) :
     mReq(aRequest),
     mError(aError)
-  {
+  {    
   }
 
   nsresult
@@ -291,7 +293,8 @@ DOMRequestService::FireSuccessAsync(nsIDOMDOMRequest* aRequest,
                                     const jsval& aResult)
 {
   NS_ENSURE_STATE(aRequest);
-  nsCOMPtr<nsIRunnable> asyncTask = new FireSuccessAsyncTask(static_cast<DOMRequest*>(aRequest), aResult);
+  nsCOMPtr<nsIRunnable> asyncTask =
+    new FireSuccessAsyncTask(static_cast<DOMRequest*>(aRequest), aResult);
   if (NS_FAILED(NS_DispatchToMainThread(asyncTask))) {
     NS_WARNING("Failed to dispatch to main thread!");
     return NS_ERROR_FAILURE;
@@ -304,7 +307,8 @@ DOMRequestService::FireErrorAsync(nsIDOMDOMRequest* aRequest,
                                   const nsAString& aError)
 {
   NS_ENSURE_STATE(aRequest);
-  nsCOMPtr<nsIRunnable> asyncTask = new FireErrorAsyncTask(static_cast<DOMRequest*>(aRequest), aError);
+  nsCOMPtr<nsIRunnable> asyncTask =
+    new FireErrorAsyncTask(static_cast<DOMRequest*>(aRequest), aError);
   if (NS_FAILED(NS_DispatchToMainThread(asyncTask))) {
     NS_WARNING("Failed to dispatch to main thread!");
     return NS_ERROR_FAILURE;
