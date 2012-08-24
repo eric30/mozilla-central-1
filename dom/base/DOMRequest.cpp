@@ -12,6 +12,7 @@
 #include "nsEventDispatcher.h"
 #include "nsDOMEvent.h"
 #include "nsContentUtils.h"
+#include "nsThreadUtils.h"
 
 using mozilla::dom::DOMRequest;
 using mozilla::dom::DOMRequestService;
@@ -223,5 +224,90 @@ DOMRequestService::FireError(nsIDOMDOMRequest* aRequest,
   NS_ENSURE_STATE(aRequest);
   static_cast<DOMRequest*>(aRequest)->FireError(aError);
 
+  return NS_OK;
+}
+
+class FireSuccessAsyncTask : public nsRunnable
+{
+public:
+  FireSuccessAsyncTask(DOMRequest* aRequest,
+                       const jsval& aResult) :
+    mReq(aRequest),
+    mResult(aResult)
+  {
+    nsresult rv;
+    nsIScriptContext* sc = mReq->GetContextForEventHandlers(&rv);
+    MOZ_ASSERT(NS_SUCCEEDED(rv) && sc->GetNativeContext());
+
+    JS_AddValueRoot(sc->GetNativeContext(), &mResult);
+  }
+
+  nsresult
+  Run()
+  {
+    mReq->FireSuccess(mResult);
+    return NS_OK;
+  }
+
+  ~FireSuccessAsyncTask()
+  {
+    nsresult rv;
+    nsIScriptContext* sc = mReq->GetContextForEventHandlers(&rv);
+    MOZ_ASSERT(NS_SUCCEEDED(rv) && sc->GetNativeContext());
+
+    // We need to build a new request, otherwise we assert since there won't be
+    // a request available yet.
+    JSAutoRequest ar(sc->GetNativeContext());
+    JS_RemoveValueRoot(sc->GetNativeContext(), &mResult);
+  }
+private:
+  nsRefPtr<DOMRequest> mReq;
+  jsval mResult;
+};
+
+class FireErrorAsyncTask : public nsRunnable
+{
+public:
+  FireErrorAsyncTask(DOMRequest* aRequest,
+                     const nsAString& aError) :
+    mReq(aRequest),
+    mError(aError)
+  {
+  }
+
+  nsresult
+  Run()
+  {
+    mReq->FireError(mError);
+    return NS_OK;
+  }
+private:
+  nsRefPtr<DOMRequest> mReq;
+  nsString mError;
+};
+
+NS_IMETHODIMP
+DOMRequestService::FireSuccessAsync(nsIDOMDOMRequest* aRequest,
+                                    const jsval& aResult)
+{
+  NS_ENSURE_STATE(aRequest);
+  nsCOMPtr<nsIRunnable> asyncTask = new FireSuccessAsyncTask(static_cast<DOMRequest*>(aRequest), aResult);
+  if (NS_FAILED(NS_DispatchToMainThread(asyncTask))) {
+    NS_WARNING("Failed to dispatch to main thread!");
+    return NS_ERROR_FAILURE;
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+DOMRequestService::FireErrorAsync(nsIDOMDOMRequest* aRequest,
+                                  const nsAString& aError)
+{
+  NS_ENSURE_STATE(aRequest);
+  nsCOMPtr<nsIRunnable> asyncTask = new FireErrorAsyncTask(static_cast<DOMRequest*>(aRequest), aError);
+  if (NS_FAILED(NS_DispatchToMainThread(asyncTask))) {
+    NS_WARNING("Failed to dispatch to main thread!");
+    return NS_ERROR_FAILURE;
+  }
   return NS_OK;
 }
