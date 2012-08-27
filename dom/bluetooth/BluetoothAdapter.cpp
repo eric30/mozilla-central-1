@@ -452,9 +452,9 @@ BluetoothAdapter::StartStopDiscovery(bool aStart, nsIDOMDOMRequest** aRequest)
   nsRefPtr<BluetoothVoidReplyRunnable> results = new BluetoothVoidReplyRunnable(req);
 
   if (aStart) {
-    rv = bs->StartDiscoveryInternal(mPath, results);
+    rv = bs->StartDiscoveryInternal(results);
   } else {
-    rv = bs->StopDiscoveryInternal(mPath, results);
+    rv = bs->StopDiscoveryInternal(results);
   }
   if (NS_FAILED(rv)) {
     NS_WARNING("Starting discovery failed!");

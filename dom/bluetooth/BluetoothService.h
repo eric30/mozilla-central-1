@@ -123,8 +123,7 @@ public:
    *
    * @return NS_OK if discovery stopped correctly, false otherwise
    */
-  virtual nsresult StopDiscoveryInternal(const nsAString& aAdapterPath,
-                                         BluetoothReplyRunnable* aRunnable) = 0;
+  virtual nsresult StopDiscoveryInternal(BluetoothReplyRunnable* aRunnable) = 0;
 
   /** 
    * Start device discovery (platform specific implementation)
@@ -133,8 +132,7 @@ public:
    *
    * @return NS_OK if discovery stopped correctly, false otherwise
    */
-  virtual nsresult StartDiscoveryInternal(const nsAString& aAdapterPath,
-                                          BluetoothReplyRunnable* aRunnable) = 0;
+  virtual nsresult StartDiscoveryInternal(BluetoothReplyRunnable* aRunnable) = 0;
 
   /** 
    * Platform specific startup functions go here. Usually deals with member
@@ -260,6 +258,8 @@ protected:
   BluetoothSignalObserverTable;
 
   BluetoothSignalObserverTable mBluetoothSignalObserverTable;
+
+  char* mDefaultAdapterPath;
 };
 
 END_BLUETOOTH_NAMESPACE

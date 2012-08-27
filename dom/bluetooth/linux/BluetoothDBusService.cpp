@@ -1031,8 +1031,9 @@ BluetoothDBusService::StopInternal()
 class DefaultAdapterPropertiesRunnable : public nsRunnable
 {
 public:
-  DefaultAdapterPropertiesRunnable(BluetoothReplyRunnable* aRunnable)
+  DefaultAdapterPropertiesRunnable(BluetoothReplyRunnable* aRunnable, char** aContainer)
     : mRunnable(dont_AddRef(aRunnable))
+    , mContainer(aContainer)
   {
   }
 
@@ -1065,7 +1066,10 @@ public:
     nsString path = v.get_nsString();
     nsCString tmp_path = NS_ConvertUTF16toUTF8(path);
     const char* object_path = tmp_path.get();
-   
+
+    *mContainer = new char[strlen(object_path)];
+    strcpy(*mContainer, object_path);
+
     v = InfallibleTArray<BluetoothNamedValue>();
     msg = dbus_func_args_timeout(gThreadConnection->GetConnection(),
                                  1000,
@@ -1096,6 +1100,7 @@ public:
 
 private:
   nsRefPtr<BluetoothReplyRunnable> mRunnable;
+  char** mContainer;
 };
 
 nsresult
@@ -1109,7 +1114,7 @@ BluetoothDBusService::GetDefaultAdapterPathInternal(BluetoothReplyRunnable* aRun
   NS_ASSERTION(NS_IsMainThread(), "Must be called from main thread!");
   nsRefPtr<BluetoothReplyRunnable> runnable = aRunnable;
 
-  nsRefPtr<nsRunnable> func(new DefaultAdapterPropertiesRunnable(runnable));
+  nsRefPtr<nsRunnable> func(new DefaultAdapterPropertiesRunnable(runnable, &mDefaultAdapterPath));
   if (NS_FAILED(mBluetoothCommandThread->Dispatch(func, NS_DISPATCH_NORMAL))) {
     NS_WARNING("Cannot dispatch firmware loading task!");
     return NS_ERROR_FAILURE;
@@ -1120,8 +1125,7 @@ BluetoothDBusService::GetDefaultAdapterPathInternal(BluetoothReplyRunnable* aRun
 }
 
 nsresult
-BluetoothDBusService::SendDiscoveryMessage(const nsAString& aAdapterPath,
-                                           const char* aMessageName,
+BluetoothDBusService::SendDiscoveryMessage(const char* aMessageName,
                                            BluetoothReplyRunnable* aRunnable)
 {
   if (!mConnection) {
@@ -1132,12 +1136,11 @@ BluetoothDBusService::SendDiscoveryMessage(const nsAString& aAdapterPath,
 
   nsRefPtr<BluetoothReplyRunnable> runnable = aRunnable;
 
-  NS_ConvertUTF16toUTF8 s(aAdapterPath);
   if (!dbus_func_args_async(mConnection,
                             1000,
                             GetVoidCallback,
                             (void*)aRunnable,
-                            s.get(),
+                            mDefaultAdapterPath,
                             DBUS_ADAPTER_IFACE,
                             aMessageName,
                             DBUS_TYPE_INVALID)) {
@@ -1149,17 +1152,15 @@ BluetoothDBusService::SendDiscoveryMessage(const nsAString& aAdapterPath,
 }
 
 nsresult
-BluetoothDBusService::StopDiscoveryInternal(const nsAString& aAdapterPath,
-                                            BluetoothReplyRunnable* aRunnable)
+BluetoothDBusService::StopDiscoveryInternal(BluetoothReplyRunnable* aRunnable)
 {
-  return SendDiscoveryMessage(aAdapterPath, "StopDiscovery", aRunnable);
+  return SendDiscoveryMessage("StopDiscovery", aRunnable);
 }
  
 nsresult
-BluetoothDBusService::StartDiscoveryInternal(const nsAString& aAdapterPath,
-                                             BluetoothReplyRunnable* aRunnable)
+BluetoothDBusService::StartDiscoveryInternal(BluetoothReplyRunnable* aRunnable)
 {
-  return SendDiscoveryMessage(aAdapterPath, "StartDiscovery", aRunnable);
+  return SendDiscoveryMessage("StartDiscovery", aRunnable);
 }
 
 class BluetoothPairedDevicePropertiesRunnable : public nsRunnable

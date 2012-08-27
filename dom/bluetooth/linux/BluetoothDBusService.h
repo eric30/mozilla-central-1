@@ -29,10 +29,8 @@ public:
   virtual nsresult GetDefaultAdapterPathInternal(BluetoothReplyRunnable* aRunnable);
   virtual nsresult GetPairedDevicePropertiesInternal(const nsTArray<nsString>& aDeviceAddresses,
                                                      BluetoothReplyRunnable* aRunnable);
-  virtual nsresult StartDiscoveryInternal(const nsAString& aAdapterPath,
-                                          BluetoothReplyRunnable* aRunnable);
-  virtual nsresult StopDiscoveryInternal(const nsAString& aAdapterPath,
-                                         BluetoothReplyRunnable* aRunnable);
+  virtual nsresult StartDiscoveryInternal(BluetoothReplyRunnable* aRunnable);
+  virtual nsresult StopDiscoveryInternal(BluetoothReplyRunnable* aRunnable);
   virtual nsresult
   GetProperties(BluetoothObjectType aType,
                 const nsAString& aPath,
@@ -87,8 +85,7 @@ private:
                                   const char* aInterface,
                                   void (*aCB)(DBusMessage *, void *),
                                   BluetoothReplyRunnable* aRunnable);
-  nsresult SendDiscoveryMessage(const nsAString& aAdapterPath,
-                                const char* aMessageName,
+  nsresult SendDiscoveryMessage(const char* aMessageName,
                                 BluetoothReplyRunnable* aRunnable);
   nsresult SendSetPropertyMessage(const nsString& aPath, const char* aInterface,
                                   const BluetoothNamedValue& aValue,
