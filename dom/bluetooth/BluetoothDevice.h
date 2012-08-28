@@ -20,6 +20,7 @@ BEGIN_BLUETOOTH_NAMESPACE
 class BluetoothNamedValue;
 class BluetoothValue;
 class BluetoothSignal;
+class BluetoothSocket;
 
 class BluetoothDevice : public nsDOMEventTargetHelper
                       , public nsIDOMBluetoothDevice
@@ -59,11 +60,14 @@ public:
   void Unroot();
 private:
   BluetoothDevice(nsPIDOMWindow* aOwner, const nsAString& aAdapterPath,
-                  const BluetoothValue& aValue);
+                  const BluetoothValue& aSignal);
+  BluetoothDevice(nsPIDOMWindow* aOwner, const nsAString& aAdapterPath,
+                  const nsAString& aDevicePath);
   ~BluetoothDevice();
   void Root();
-  
+
   JSObject* mJsUuids;
+  JSObject* mJsServices;
 
   nsString mAdapterPath;
   nsString mAddress;
@@ -73,6 +77,7 @@ private:
   bool mPaired;
   bool mIsRooted;
   nsTArray<nsString> mUuids;
+  nsTArray<nsString> mServices;
 
   NS_DECL_EVENT_HANDLER(propertychanged)
   NS_DECL_EVENT_HANDLER(connected)

@@ -11,6 +11,8 @@
 #include "BluetoothReplyRunnable.h"
 #include "BluetoothService.h"
 #include "BluetoothUtils.h"
+#include "BluetoothServiceUuid.h"
+#include "BluetoothSocket.h"
 
 #include "nsIDOMDOMRequest.h"
 #include "nsDOMClassInfo.h"
@@ -25,6 +27,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(BluetoothDevice)
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(BluetoothDevice,
                                                nsDOMEventTargetHelper)
   NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mJsUuids)
+  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mJsServices)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(BluetoothDevice, 
@@ -51,11 +54,65 @@ NS_INTERFACE_MAP_END_INHERITING(nsDOMEventTargetHelper)
 NS_IMPL_ADDREF_INHERITED(BluetoothDevice, nsDOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(BluetoothDevice, nsDOMEventTargetHelper)
 
+class CreateSocketRunnable : public BluetoothReplyRunnable
+{
+public:
+  CreateSocketRunnable(BluetoothDevice* aDevice,
+                       nsIDOMDOMRequest* aReq) :
+    BluetoothReplyRunnable(aReq),
+    mDevicePtr(aDevice)
+  {
+  }
+
+  bool
+  ParseSuccessfulReply(jsval* aValue)
+  {
+    int fd = mReply->get_BluetoothReplySuccess().value().get_uint32_t();
+    nsCOMPtr<nsIDOMBluetoothSocket> device(BluetoothSocket::Create(mDevicePtr->GetOwner(),
+                                                                   fd));
+    if (!device) {
+      NS_WARNING("Connect failed - HFP Socket");
+      return false;
+    }
+
+    nsresult rv;
+    nsIScriptContext* sc = mDevicePtr->GetContextForEventHandlers(&rv);
+    if (!sc) {
+      NS_WARNING("Cannot create script context!");
+      SetError(NS_LITERAL_STRING("BluetoothScriptContextError"));
+      return false;
+    }
+
+    rv = nsContentUtils::WrapNative(sc->GetNativeContext(),
+                                    sc->GetNativeGlobal(),
+                                    device,
+                                    aValue);
+    bool result = NS_SUCCEEDED(rv) ? true : false;
+    if (!result) {
+      NS_WARNING("Cannot create native object!");
+      SetError(NS_LITERAL_STRING("BluetoothNativeObjectError"));
+    }
+
+    return result;
+  }
+
+  void
+  ReleaseMembers()
+  {
+    BluetoothReplyRunnable::ReleaseMembers();
+    mDevicePtr = nullptr;
+  }
+
+private:
+  nsRefPtr<BluetoothDevice> mDevicePtr;
+};
+
 BluetoothDevice::BluetoothDevice(nsPIDOMWindow* aOwner,
                                  const nsAString& aAdapterPath,
                                  const BluetoothValue& aValue) :
   BluetoothPropertyContainer(BluetoothObjectType::TYPE_DEVICE),
   mJsUuids(nullptr),
+  mJsServices(nullptr),
   mAdapterPath(aAdapterPath),
   mIsRooted(false)
 {
@@ -96,7 +153,7 @@ BluetoothDevice::Unroot()
     mIsRooted = false;
   }
 }
-  
+
 void
 BluetoothDevice::SetPropertyByValue(const BluetoothNamedValue& aValue)
 {
@@ -104,15 +161,17 @@ BluetoothDevice::SetPropertyByValue(const BluetoothNamedValue& aValue)
   const BluetoothValue& value = aValue.value();
   if (name.EqualsLiteral("Name")) {
     mName = value.get_nsString();
-  } else if (name.EqualsLiteral("Address")) {
-    mAddress = value.get_nsString();
+  } else if (name.EqualsLiteral("Path")) {
+    mPath = value.get_nsString();
+    NS_WARNING(NS_ConvertUTF16toUTF8(mPath).get());
     BluetoothService* bs = BluetoothService::Get();
     if (!bs) {
       NS_WARNING("BluetoothService not available!");
-      return;
+    } else if (NS_FAILED(bs->RegisterBluetoothSignalHandler(mPath, this))) {
+      NS_WARNING("Failed to register object with observer!");
     }
-    // We can't actually set up our path until we know our address
-    bs->GetDevicePath(mAdapterPath, mAddress, mPath);
+  } else if (name.EqualsLiteral("Address")) {
+    mAddress = value.get_nsString();
   } else if (name.EqualsLiteral("Class")) {
     mClass = value.get_uint32_t();
   } else if (name.EqualsLiteral("Connected")) {
@@ -129,6 +188,22 @@ BluetoothDevice::SetPropertyByValue(const BluetoothNamedValue& aValue)
                              sc->GetNativeGlobal(), mUuids, &mJsUuids);
       if (NS_FAILED(rv)) {
         NS_WARNING("Cannot set JS UUIDs object!");
+        return;
+      }
+      Root();
+    } else {
+      NS_WARNING("Could not get context!");
+    }
+  } else if (name.EqualsLiteral("Services")) {
+    mServices = value.get_ArrayOfnsString();
+    nsresult rv;
+    nsIScriptContext* sc = GetContextForEventHandlers(&rv);
+    if (sc) {
+      rv =
+        StringArrayToJSArray(sc->GetNativeContext(),
+                             sc->GetNativeGlobal(), mServices, &mJsServices);
+      if (NS_FAILED(rv)) {
+        NS_WARNING("Cannot set JS Services object!");
         return;
       }
       Root();
@@ -250,8 +325,80 @@ BluetoothDevice::GetUuids(JSContext* aCx, jsval* aUuids)
   } else {
     NS_WARNING("UUIDs not yet set!\n");
     return NS_ERROR_FAILURE;
-  }    
+  }
   return NS_OK;
+}
+
+NS_IMETHODIMP
+BluetoothDevice::GetServices(JSContext* aCx, jsval* aServices)
+{
+  if (mJsServices) {
+    aServices->setObject(*mJsServices);
+  } else {
+    NS_WARNING("Services not yet set!\n");
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+BluetoothDevice::CreateSocket(const nsAString& aServiceUuid,
+                              nsIDOMDOMRequest** aReq)
+{
+  BluetoothService* bs = BluetoothService::Get();
+  if (!bs) {
+    NS_WARNING("BluetoothService not available!");
+    return NS_ERROR_FAILURE;
+  }
+
+  nsCOMPtr<nsIDOMRequestService> rs = do_GetService("@mozilla.org/dom/dom-request-service;1");
+  if (!rs) {
+    NS_WARNING("No DOMRequest Service!");
+    return NS_ERROR_FAILURE;
+  }
+
+  nsCOMPtr<nsIDOMDOMRequest> req;
+  nsresult rv = rs->CreateRequest(GetOwner(), getter_AddRefs(req));
+  if (NS_FAILED(rv)) {
+    NS_WARNING("Can't create DOMRequest!");
+    return NS_ERROR_FAILURE;
+  }
+
+  BluetoothSocketType bttype = BluetoothSocketType::RFCOMM;
+  if (NS_ConvertUTF16toUTF8(aServiceUuid).Equals(BluetoothServiceUuidStr::Headset)) {
+    nsPIDOMWindow* aWindow = GetOwner();
+    nsPIDOMWindow* innerWindow = aWindow->IsInnerWindow() ?
+      aWindow :
+      aWindow->GetCurrentInnerWindow();
+    NS_ENSURE_TRUE(innerWindow, NS_ERROR_FAILURE);
+
+    // Need the document in order to make security decisions.
+    nsCOMPtr<nsIDocument> document =
+      do_QueryInterface(innerWindow->GetExtantDocument());
+    NS_ENSURE_TRUE(document, NS_NOINTERFACE);
+
+    // Do security checks. We assume that chrome is always allowed.
+    if (!nsContentUtils::IsSystemPrincipal(document->NodePrincipal())) {
+      rs->FireErrorAsync(req, NS_LITERAL_STRING("SCOChromeOnly"));
+      req.forget(aReq);
+      return NS_OK;
+    }
+    bttype = BluetoothSocketType::SCO;
+  }
+
+  nsRefPtr<CreateSocketRunnable> results = new CreateSocketRunnable(this, req);
+
+  rv = bs->GetSocketViaService(mPath, aServiceUuid, bttype, true, false, results);
+  if (NS_FAILED(rv)) {
+    NS_WARNING("Call to get socket failed!");
+    rs->FireErrorAsync(req, NS_LITERAL_STRING("CreateSocketFailure"));
+    req.forget(aReq);
+    return NS_OK;
+  }
+
+  req.forget(aReq);
+
+  return NS_OK;
+
 }
 
 NS_IMPL_EVENT_HANDLER(BluetoothDevice, propertychanged)

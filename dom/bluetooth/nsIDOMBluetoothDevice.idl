@@ -6,15 +6,19 @@
 
 #include "nsIDOMEventTarget.idl"
 
-[scriptable, builtinclass, uuid(647bb64c-8d45-4642-b86b-b3b80d4c8c25)]
+interface nsIDOMDOMRequest;
+
+[scriptable, builtinclass, uuid(6061dad2-483f-4bcc-910c-6c76f2f63ecd)]
 interface nsIDOMBluetoothDevice : nsIDOMEventTarget
 {
   readonly attribute DOMString address;
   readonly attribute DOMString name;
   [binaryname(DeviceClass)] readonly attribute unsigned long class;
   [implicit_jscontext] readonly attribute jsval uuids;
+  [implicit_jscontext] readonly attribute jsval services;
   readonly attribute bool connected;
   readonly attribute bool paired;
+  nsIDOMDOMRequest createSocket(in DOMString aServiceUuid);
   attribute nsIDOMEventListener onpropertychanged;
   attribute nsIDOMEventListener onconnected;
   attribute nsIDOMEventListener ondisconnected;
