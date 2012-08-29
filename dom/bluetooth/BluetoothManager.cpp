@@ -168,6 +168,21 @@ BluetoothManager::BluetoothManager(nsPIDOMWindow *aWindow) :
 
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   obs->AddObserver(this, "mozsettings-changed", false);
+
+/*
+   // Temp xxx 
+   // Seems like this part could change the value in mozSettings
+   nsCOMPtr<nsISettingsService> settingsService =
+     do_GetService("@mozilla.org/settingsService;1");
+   if (!settingsService) {
+       ERR("Failed to get settingsLock service!");
+       return;
+     }
+     nsCOMPtr<nsISettingsServiceLock> lock;
+     settingsService->GetLock(getter_AddRefs(lock));
+     nsCOMPtr<nsISettingsServiceCallback> callback = new SettingsServiceCallback();
+     lock->Set(UMS_MODE, INT_TO_JSVAL(AUTOMOUNTER_DISABLE), callback);
+     */
 }
 
 BluetoothManager::~BluetoothManager()
