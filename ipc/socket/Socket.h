@@ -7,8 +7,35 @@
 #ifndef mozilla_ipc_Socket_h
 #define mozilla_ipc_Socket_h
 
+#include <stdint.h>
+#include "mozilla/RefPtr.h"
+
 namespace mozilla {
 namespace ipc {
+
+struct SocketRawData
+{
+    static const size_t MAX_DATA_SIZE = 1024;
+    uint8_t mData[MAX_DATA_SIZE];
+
+    // Number of octets in mData.
+    size_t mSize;
+};
+
+class SocketConsumer : public RefCounted<SocketConsumer>
+{
+public:
+  SocketConsumer() {}
+  virtual ~SocketConsumer() {}
+  virtual void ReceiveSocketData(SocketRawData* aMessage) = 0;
+  virtual void SendSocketData(SocketRawData* aMessage) {}
+};
+
+void
+AddSocketWatcher(SocketConsumer* s, int fd);
+
+void
+RemoveSocketWatcher(SocketConsumer* s, int fd);
 
 int
 GetNewSocket(int type, const char* aAddress, int channel, bool auth, bool encrypt);

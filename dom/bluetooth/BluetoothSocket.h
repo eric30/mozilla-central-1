@@ -7,6 +7,7 @@
 #ifndef mozilla_dom_bluetooth_bluetoothsocket_h__
 #define mozilla_dom_bluetooth_bluetoothsocket_h__
 
+#include "mozilla/ipc/Socket.h"
 #include "BluetoothCommon.h"
 #include "nsDOMEventTargetHelper.h"
 #include "nsIDOMBluetoothSocket.h"
@@ -14,7 +15,8 @@
 BEGIN_BLUETOOTH_NAMESPACE
 
 class BluetoothSocket : public nsDOMEventTargetHelper,
-                        public nsIDOMBluetoothSocket
+                        public nsIDOMBluetoothSocket,
+                        public mozilla::ipc::SocketConsumer
 {
 public:
   NS_DECL_ISUPPORTS_INHERITED
@@ -27,6 +29,8 @@ public:
 
   BluetoothSocket(nsPIDOMWindow* aOwner, int aFd);
   ~BluetoothSocket();
+
+  virtual void ReceiveSocketData(mozilla::ipc::SocketRawData* aMessage);
 
   static already_AddRefed<BluetoothSocket>
   Create(nsPIDOMWindow* aOwner, int aFd);

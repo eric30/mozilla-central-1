@@ -50,6 +50,7 @@ BluetoothSocket::Create(nsPIDOMWindow* aOwner, int aFd)
 {
   MOZ_ASSERT(aFd > 0);
   nsRefPtr<BluetoothSocket> socket(new BluetoothSocket(aOwner, aFd));
+  mozilla::ipc::AddSocketWatcher(socket, aFd);
   return socket.forget();
 }
 
@@ -85,4 +86,10 @@ BluetoothSocket::Close(nsIDOMDOMRequest** aReq)
   req.forget(aReq);
 
   return NS_OK;
+}
+
+void
+BluetoothSocket::ReceiveSocketData(mozilla::ipc::SocketRawData* aMessage)
+{
+  NS_WARNING("HOLY SHIT DATA!");
 }
