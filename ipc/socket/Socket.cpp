@@ -100,6 +100,27 @@ struct SocketManager : public RefCounted<SocketManager>,
 
 static RefPtr<SocketManager> sManager;
 
+class SocketReceiveTask : public nsRunnable
+{
+public:
+  SocketReceiveTask(SocketConsumer* aConsumer, SocketRawData* aData) :
+    mConsumer(aConsumer),
+    mRawData(aData)
+  {
+  }
+    
+  NS_IMETHOD
+  Run()
+  {
+    mConsumer->ReceiveSocketData(mRawData);
+    delete mRawData;
+    return NS_OK;
+  }
+private:
+  nsRefPtr<SocketConsumer> mConsumer;
+  SocketRawData* mRawData;
+};
+
 bool
 SocketManager::AddSocket(SocketConsumer* s, int fd)
 {
@@ -175,8 +196,9 @@ SocketManager::OnFileCanReadWithoutBlocking(int fd)
       }
       printf("%s\n", mIncoming->mData);
       mIncoming->mSize = ret;
-      mWatchers.Get(fd)->mConsumer->ReceiveSocketData(mIncoming);
-      //sConsumer->MessageReceived(mIncoming.forget());
+      nsRefPtr<SocketReceiveTask> t =
+        new SocketReceiveTask(mWatchers.Get(fd)->mConsumer, mIncoming);
+      NS_DispatchToMainThread(t);
       if (ret < ssize_t(SocketRawData::MAX_DATA_SIZE)) {
         return;
       }
