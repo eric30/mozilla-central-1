@@ -67,7 +67,7 @@ struct SocketManager : public RefCounted<SocketManager>,
     SocketWatcher(SocketConsumer* s) : mConsumer(s)
     {
     }
-    
+    SocketRawDataQueue mOutgoingQ;
     nsRefPtr<SocketConsumer> mConsumer;
     MessageLoopForIO::FileDescriptorWatcher mReadWatcher;
     MessageLoopForIO::FileDescriptorWatcher mWriteWatcher;
@@ -90,12 +90,11 @@ struct SocketManager : public RefCounted<SocketManager>,
   bool RemoveSocket(SocketConsumer* s, int fd);
 
   nsAutoPtr<SocketRawData> mIncoming;
-  MessageLoopForIO* mIOLoop;
-
+  MessageLoopForIO* mIOLoop;  
+  
   nsDataHashtable<nsUint32HashKey, SocketWatcher*> mWatchers;
 
   Mutex mMutex;
-  SocketRawDataQueue mOutgoingQ;
 };
 
 static RefPtr<SocketManager> sManager;
@@ -108,7 +107,7 @@ public:
     mRawData(aData)
   {
   }
-    
+
   NS_IMETHOD
   Run()
   {
@@ -120,6 +119,34 @@ private:
   nsRefPtr<SocketConsumer> mConsumer;
   SocketRawData* mRawData;
 };
+
+class SocketSendTask : public Task
+{
+public:
+  SocketSendTask(SocketRawData* aData, int aFd)
+    : mData(aData),
+      mFd(aFd)
+  {
+  }
+
+  void
+  Run()
+  {
+    sManager->mWatchers.Get(mFd)->mOutgoingQ.AppendElement(mData);
+    sManager->OnFileCanWriteWithoutBlocking(mFd);
+  }
+
+private:
+  SocketRawData* mData;
+  int mFd;
+};
+
+void
+SocketConsumer::SendSocketData(SocketRawData* aData)
+{
+  XRE_GetIOMessageLoop()->PostTask(FROM_HERE,
+                                   new SocketSendTask(aData, mFd));
+}
 
 bool
 SocketManager::AddSocket(SocketConsumer* s, int fd)
@@ -220,7 +247,7 @@ SocketManager::OnFileCanWriteWithoutBlocking(int fd)
     {
       MutexAutoLock lock(mMutex);
 
-      if (mOutgoingQ.IsEmpty()) {
+      if (mWatchers.Get(fd)->mOutgoingQ.IsEmpty()) {
         return;
       }
     }

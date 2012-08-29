@@ -28,7 +28,9 @@ public:
   SocketConsumer() {}
   virtual ~SocketConsumer() {}
   virtual void ReceiveSocketData(SocketRawData* aMessage) = 0;
-  virtual void SendSocketData(SocketRawData* aMessage) {}
+  void SendSocketData(SocketRawData* aMessage);
+private:
+  int mFd;
 };
 
 void
