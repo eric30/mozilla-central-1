@@ -18,7 +18,10 @@ interface nsIDOMBluetoothDevice : nsIDOMEventTarget
   [implicit_jscontext] readonly attribute jsval services;
   readonly attribute bool connected;
   readonly attribute bool paired;
+
   nsIDOMDOMRequest createSocket(in DOMString aServiceUuid);
+  void connectHeadset();
+
   attribute nsIDOMEventListener onpropertychanged;
   attribute nsIDOMEventListener onconnected;
   attribute nsIDOMEventListener ondisconnected;
