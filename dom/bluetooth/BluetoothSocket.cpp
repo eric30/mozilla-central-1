@@ -91,5 +91,8 @@ BluetoothSocket::Close(nsIDOMDOMRequest** aReq)
 void
 BluetoothSocket::ReceiveSocketData(mozilla::ipc::SocketRawData* aMessage)
 {
-  NS_WARNING("HOLY SHIT DATA!");
+  mozilla::ipc::SocketRawData* s = new mozilla::ipc::SocketRawData("\xd\xa+BRSF: 27\xd\xa");
+  SendSocketData(s);
+  s = new mozilla::ipc::SocketRawData("\xd\xaOK\xd\xa");
+  SendSocketData(s);
 }

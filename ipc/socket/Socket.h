@@ -8,6 +8,8 @@
 #define mozilla_ipc_Socket_h
 
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 #include "mozilla/RefPtr.h"
 
 namespace mozilla {
@@ -15,20 +17,36 @@ namespace ipc {
 
 struct SocketRawData
 {
-    static const size_t MAX_DATA_SIZE = 1024;
-    uint8_t mData[MAX_DATA_SIZE];
+  static const size_t MAX_DATA_SIZE = 1024;
+  uint8_t mData[MAX_DATA_SIZE];
 
-    // Number of octets in mData.
-    size_t mSize;
+  // Number of octets in mData.
+  size_t mSize;
+  size_t mCurrentWriteOffset;
+
+  SocketRawData() :
+    mCurrentWriteOffset(0),
+    mSize(0)
+  {
+  }
+  
+  SocketRawData(const char* str) :
+    mCurrentWriteOffset(0)
+  {
+    memcpy(mData, str, strlen(str));
+    mSize = strlen(str);   
+  }
 };
 
 class SocketConsumer : public RefCounted<SocketConsumer>
 {
 public:
-  SocketConsumer() {}
+  SocketConsumer()
+  {}
   virtual ~SocketConsumer() {}
   virtual void ReceiveSocketData(SocketRawData* aMessage) = 0;
   void SendSocketData(SocketRawData* aMessage);
+  void SetFd(int aFd) { mFd = aFd; }
 private:
   int mFd;
 };

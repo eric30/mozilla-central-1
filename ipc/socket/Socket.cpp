@@ -57,22 +57,23 @@ static int get_bdaddr(const char *str, bdaddr_t *ba)
   return 0;
 }
 
+struct SocketWatcher
+{
+  typedef nsTArray<SocketRawData*> SocketRawDataQueue;
+  
+  SocketWatcher(SocketConsumer* s) : mConsumer(s)
+  {
+  }
+  SocketRawDataQueue mOutgoingQ;
+  nsRefPtr<SocketConsumer> mConsumer;
+  MessageLoopForIO::FileDescriptorWatcher mReadWatcher;
+  MessageLoopForIO::FileDescriptorWatcher mWriteWatcher;
+};
+  
+
 struct SocketManager : public RefCounted<SocketManager>,
                        public MessageLoopForIO::Watcher
 {
-  typedef nsTArray<SocketRawData*> SocketRawDataQueue;
-
-  struct SocketWatcher
-  {
-    SocketWatcher(SocketConsumer* s) : mConsumer(s)
-    {
-    }
-    SocketRawDataQueue mOutgoingQ;
-    nsRefPtr<SocketConsumer> mConsumer;
-    MessageLoopForIO::FileDescriptorWatcher mReadWatcher;
-    MessageLoopForIO::FileDescriptorWatcher mWriteWatcher;
-  };
-  
   SocketManager() : mIOLoop(MessageLoopForIO::current())
                   , mMutex("SocketManager.mMutex")
   {
@@ -132,7 +133,12 @@ public:
   void
   Run()
   {
-    sManager->mWatchers.Get(mFd)->mOutgoingQ.AppendElement(mData);
+    SocketWatcher* s = sManager->mWatchers.Get(mFd);
+    if (!s) {
+      NS_WARNING("No watcher for file descriptor!");
+      return;
+    }
+    s->mOutgoingQ.AppendElement(mData);
     sManager->OnFileCanWriteWithoutBlocking(mFd);
   }
 
@@ -167,6 +173,7 @@ SocketManager::AddSocket(SocketConsumer* s, int fd)
     return false;
   }
 
+  s->SetFd(fd);
   SocketWatcher* w = new SocketWatcher(s);
   mWatchers.Put(fd, w);
   if (!mIOLoop->WatchFileDescriptor(fd,
@@ -176,6 +183,7 @@ SocketManager::AddSocket(SocketConsumer* s, int fd)
                                     this)) {
     return false;
   }
+  printf("Set! Connected!");
   return true;
 }
 
@@ -203,6 +211,7 @@ SocketManager::OnFileCanReadWithoutBlocking(int fd)
       mIncoming = new SocketRawData();
       ssize_t ret = read(fd, mIncoming->mData, SocketRawData::MAX_DATA_SIZE);
       if (ret <= 0) {
+        NS_WARNING("DATA PROBLEM!");        
         if (ret == -1) {
           if (errno == EINTR) {
             continue; // retry system call when interrupted
@@ -221,6 +230,8 @@ SocketManager::OnFileCanReadWithoutBlocking(int fd)
         close(fd);
         return;
       }
+      printf("Data %d\n", ret);
+      mIncoming->mData[ret] = 0;
       printf("%s\n", mIncoming->mData);
       mIncoming->mSize = ret;
       nsRefPtr<SocketReceiveTask> t =
@@ -242,42 +253,48 @@ SocketManager::OnFileCanWriteWithoutBlocking(int fd)
   // within mCurrentRilRawData, and request another write when the
   // system won't block.
   //
-
   while (true) {
+    SocketRawData* data;
+    SocketWatcher* w;
     {
       MutexAutoLock lock(mMutex);
-
-      if (mWatchers.Get(fd)->mOutgoingQ.IsEmpty()) {
+      w = mWatchers.Get(fd);
+      if (w->mOutgoingQ.IsEmpty()) {
         return;
       }
+      data = w->mOutgoingQ.ElementAt(0);
     }
-    // const uint8_t *toWrite;
+    const uint8_t *toWrite;
 
-    // toWrite = mCurrentRilRawData->mData;
+    toWrite = data->mData;
  
-    // while (mCurrentWriteOffset < mCurrentRilRawData->mSize) {
-    //   ssize_t write_amount = mCurrentRilRawData->mSize - mCurrentWriteOffset;
-    //   ssize_t written;
-    //   written = write (fd, toWrite + mCurrentWriteOffset,
-    //                    write_amount);
-    //   if(written > 0) {
-    //     mCurrentWriteOffset += written;
-    //   }
-    //   if (written != write_amount) {
-    //     break;
-    //   }
-    // }
+    while (data->mCurrentWriteOffset < data->mSize) {
+      ssize_t write_amount = data->mSize - data->mCurrentWriteOffset;
+      ssize_t written;
+      written = write (fd, toWrite + data->mCurrentWriteOffset,
+                       write_amount);
+      if(written > 0) {
+        data->mCurrentWriteOffset += written;
+      }
+      if (written != write_amount) {
+        break;
+      }
+    }
 
-    // if(mCurrentWriteOffset != mCurrentRilRawData->mSize) {
-    //   MessageLoopForIO::current()->WatchFileDescriptor(
-    //     fd,
-    //     false,
-    //     MessageLoopForIO::WATCH_WRITE,
-    //     &mWriteWatcher,
-    //     this);
-    //   return;
-    // }
-    // mCurrentRilRawData = NULL;
+    if(data->mCurrentWriteOffset != data->mSize) {
+      MessageLoopForIO::current()->WatchFileDescriptor(
+        fd,
+        false,
+        MessageLoopForIO::WATCH_WRITE,
+        &w->mWriteWatcher,
+        this);
+      return;
+    }
+    {
+      MutexAutoLock lock(mMutex);
+      w->mOutgoingQ.RemoveElementAt(0);
+    }
+    delete data;
   }
 }
 
