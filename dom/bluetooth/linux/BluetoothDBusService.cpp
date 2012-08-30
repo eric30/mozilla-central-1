@@ -1762,6 +1762,9 @@ public:
     int channel = GetDeviceServiceChannel(mObjectPath, mServiceUUID, 0x0004);
     int fd = mozilla::ipc::GetNewSocket(mType, NS_ConvertUTF16toUTF8(address).get(),
                                         channel, mAuth, mEncrypt);
+
+    LOG("Address: %s, Channel: %d, fd: %d", NS_ConvertUTF16toUTF8(address), channel, fd);
+
     BluetoothValue v;
     nsString replyError;
     if (fd < 0) {
