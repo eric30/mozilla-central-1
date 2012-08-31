@@ -10,7 +10,7 @@
 
 BEGIN_BLUETOOTH_NAMESPACE
 
-class BluetoothSocket;
+class BluetoothNewSocket;
 
 class BluetoothHfpManager
 {
@@ -33,8 +33,8 @@ protected:
 
   pthread_t mAcceptThread;
   */
-  BluetoothSocket* mSocket;
-  BluetoothSocket* mServerSocket;
+  BluetoothNewSocket* mSocket;
+  BluetoothNewSocket* mServerSocket;
   bool mConnected;
   int mChannel;
   char* mAddress;

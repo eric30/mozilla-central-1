@@ -1,5 +1,5 @@
 #include "BluetoothHfpManager.h"
-#include "BluetoothSocket.h"
+#include "BluetoothNewSocket.h"
 #include "AudioManager.h"
 #include <unistd.h> /* usleep() */
 #include <linux/input.h>
@@ -110,7 +110,6 @@ BluetoothHfpManager::Connect(int channel, const char* asciiAddress)
 
   return true;
 }
-
 void
 BluetoothHfpManager::Close()
 {
@@ -155,10 +154,10 @@ BluetoothHfpManager::Listen(int channel)
       break;
     } else if (errno == 98) {
       LOG("Channel is still in use.");
-      mServerSocket->Disconnect();
+      mServerSocket->Close();
     } else {
       LOG("Unexpected error: %d", errno);
-      mServerSocket->Disconnect();
+      mServerSocket->Close();
     }
   }
 
