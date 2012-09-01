@@ -235,7 +235,7 @@ SocketManager::OnFileCanReadWithoutBlocking(int fd)
       printf("%s\n", mIncoming->mData);
       mIncoming->mSize = ret;
       nsRefPtr<SocketReceiveTask> t =
-        new SocketReceiveTask(mWatchers.Get(fd)->mConsumer, mIncoming);
+        new SocketReceiveTask(mWatchers.Get(fd)->mConsumer, mIncoming.forget());
       NS_DispatchToMainThread(t);
       if (ret < ssize_t(SocketRawData::MAX_DATA_SIZE)) {
         return;
