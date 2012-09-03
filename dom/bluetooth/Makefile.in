@@ -37,6 +37,7 @@ CPPSRCS += \
   BluetoothPropertyContainer.cpp \
   BluetoothUtils.cpp \
   BluetoothSocket.cpp \
+  BluetoothNewSocket.cpp \
   BluetoothHfpManager.cpp \
   $(NULL)
 

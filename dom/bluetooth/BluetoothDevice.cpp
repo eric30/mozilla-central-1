@@ -6,6 +6,7 @@
 
 #include "base/basictypes.h"
 #include "BluetoothDevice.h"
+#include "BluetoothHfpManager.h"
 #include "BluetoothPropertyEvent.h"
 #include "BluetoothTypes.h"
 #include "BluetoothReplyRunnable.h"
@@ -415,6 +416,19 @@ NS_IMETHODIMP
 BluetoothDevice::ConnectHeadset()
 {
   LOG("Connect Headset");
+  // Start listening remote HFP connection request
+  BluetoothHfpManager* hfp = BluetoothHfpManager::GetManager();
+  const char* address = NS_ConvertUTF16toUTF8(mAddress).get();
+
+  // TODO(Eric)
+  // Obviously, 2 is a temp value, only for me to test on my 
+  // Plantronics Explorer 240
+  if (hfp->Connect(2, address)) {
+    LOG("[HFP] Connect headset and return true");
+  } else {
+    LOG("[HFP] Connect headset false");
+  }
+
   return NS_OK;
 }
 

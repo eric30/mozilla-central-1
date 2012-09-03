@@ -15,13 +15,19 @@ BEGIN_BLUETOOTH_NAMESPACE
 class BluetoothNewSocket : public mozilla::ipc::SocketConsumer
 {
 public:
-  BluetoothNewSocket();
+  static const int TYPE_RFCOMM = 1;
+  static const int TYPE_SCO = 2;
+  static const int TYPE_L2CAP = 3;
+
+  BluetoothNewSocket(int type);
   ~BluetoothNewSocket();
+
+  int Connect(int aChannel, const char* aAddress);
 
   virtual void ReceiveSocketData(mozilla::ipc::SocketRawData* aMessage);
 
 private:
-  int mFd;
+  int mType;
 };
 
 END_BLUETOOTH_NAMESPACE

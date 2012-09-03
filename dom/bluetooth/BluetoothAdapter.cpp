@@ -7,7 +7,6 @@
 #include "base/basictypes.h"
 #include "BluetoothAdapter.h"
 #include "BluetoothDevice.h"
-#include "BluetoothHfpManager.h"
 #include "BluetoothPropertyEvent.h"
 #include "BluetoothService.h"
 #include "BluetoothServiceUuid.h"
@@ -170,10 +169,6 @@ BluetoothAdapter::BluetoothAdapter(nsPIDOMWindow* aOwner, const BluetoothValue& 
 
   BluetoothService* bs = BluetoothService::Get();
   bs->AddReservedServicesInternal(mPath, uuids);
-
-  // Start listening remote HFP connection request
-  BluetoothHfpManager* hfp = BluetoothHfpManager::GetManager();
-  //hfp->Listen(1);
 }
 
 BluetoothAdapter::~BluetoothAdapter()

@@ -22,11 +22,11 @@ static bool sStopAcceptFlag = false;
 static int uinputFd = -1;
 static int sCurrentVgs = 7;
 
-BluetoothHfpManager::BluetoothHfpManager() : mSocket(NULL)
-                                           , mServerSocket(NULL)
+BluetoothHfpManager::BluetoothHfpManager() : mSocket(nullptr)
+                                           , mServerSocket(nullptr)
                                            , mConnected(false)
                                            , mChannel(-1)
-                                           , mAddress(NULL)
+                                           , mAddress(nullptr)
 {
 }
 
@@ -78,22 +78,26 @@ BluetoothHfpManager::Disconnect()
   mConnected = false;
 }
 
+*/
+
 bool
 BluetoothHfpManager::Connect(int channel, const char* asciiAddress)
 {
   if (channel <= 0)
     return false;
 
+/*
   if (mSocket != NULL) {
     mSocket->Disconnect();
 
     delete mSocket;
     mSocket = NULL;
   }
+  */
 
-  mSocket = new BluetoothSocket(BluetoothSocket::TYPE_RFCOMM);
+  mSocket = new BluetoothNewSocket(BluetoothNewSocket::TYPE_RFCOMM);
 
-  if (mSocket->Connect(channel, asciiAddress)) {
+  if (mSocket->Connect(channel, asciiAddress) == 0) {
     LOG("Connect successfully");
     mConnected = true;
     pthread_create(&mEventThread, NULL, BluetoothHfpManager::MessageHandler, mSocket);
@@ -110,6 +114,8 @@ BluetoothHfpManager::Connect(int channel, const char* asciiAddress)
 
   return true;
 }
+
+/*
 void
 BluetoothHfpManager::Close()
 {
@@ -132,12 +138,12 @@ BluetoothHfpManager::Listen(int channel)
   if (channel <= 0)
     return false;
 
-  if (mServerSocket != NULL)
+  if (mServerSocket)
     return false;
 
   while(true) {
-    if (mServerSocket == NULL || !mServerSocket->Available()) {
-      mServerSocket = new BluetoothSocket(BluetoothSocket::TYPE_RFCOMM);
+    if (!mServerSocket) {
+      mServerSocket = new BluetoothNewSocket(BluetoothNewSocket::TYPE_RFCOMM);
       LOG("Create a new BluetoothServerSocket for listening");
     }
 
@@ -146,6 +152,7 @@ BluetoothHfpManager::Listen(int channel)
     mChannel = channel;
 
     usleep(500);
+    
     int errno = mServerSocket->Listen(channel);
 
     // 98 :EADDRINUSE
@@ -161,28 +168,28 @@ BluetoothHfpManager::Listen(int channel)
     }
   }
 
-  pthread_create(&(mAcceptThread), NULL, BluetoothHfpManager::AcceptInternal, mServerSocket);
+  //pthread_create(&(mAcceptThread), NULL, BluetoothHfpManager::AcceptInternal, mServerSocket);
 
   return true;
 }
-
+*/
 void reply_ok(int fd)
 {
-  if (BluetoothSocket::send_line(fd, "OK") != 0) {
+  if (mozilla::ipc::send_line(fd, "OK") != 0) {
     LOG("Reply [OK] failed");
   }
 }
 
 void reply_error(int fd)
 {
-  if (BluetoothSocket::send_line(fd, "ERROR") != 0) {
+  if (mozilla::ipc::send_line(fd, "ERROR") != 0) {
     LOG("Reply [ERROR] failed");
   }
 }
 
 void reply_brsf(int fd)
 {
-  if (BluetoothSocket::send_line(fd, "+BRSF: 23") != 0) {
+  if (mozilla::ipc::send_line(fd, "+BRSF: 23") != 0) {
     LOG("Reply +BRSF failed");
   }
 }
@@ -191,7 +198,7 @@ void reply_cind_current_status(int fd)
 {
   const char* str = "+CIND: 1,0,0,0,3,0,3";
 
-  if (BluetoothSocket::send_line(fd, str) != 0) {
+  if (mozilla::ipc::send_line(fd, str) != 0) {
     LOG("Reply +CIND failed");
   }
 }
@@ -202,7 +209,7 @@ void reply_cind_range(int fd)
                      (\"callheld\",(0-2)),(\"signal\",(0-5)),(\"roam\",(0-1)), \
                      (\"battchg\",(0-5))";
 
-  if (BluetoothSocket::send_line(fd, str) != 0) {
+  if (mozilla::ipc::send_line(fd, str) != 0) {
     LOG("Reply +CIND=? failed");
   }
 }
@@ -211,7 +218,7 @@ void reply_cmer(int fd, bool enableIndicator)
 {
   const char* str = enableIndicator ? "+CMER: 3,0,0,1" : "+CMER: 3,0,0,0";
 
-  if (BluetoothSocket::send_line(fd, str) != 0) {
+  if (mozilla::ipc::send_line(fd, str) != 0) {
     LOG("Reply +CMER= failed");
   }
 }
@@ -220,7 +227,7 @@ void reply_chld_range(int fd)
 {
   const char* str = "+CHLD: (0,1,2,3)";
 
-  if (BluetoothSocket::send_line(fd, str) != 0) {
+  if (mozilla::ipc::send_line(fd, str) != 0) {
     LOG("Reply +CHLD=? failed");
   }
 }
@@ -236,11 +243,11 @@ void reply_vgs(int fd)
 
   strcat(str, vgs);
 
-  if (BluetoothSocket::send_line(fd, str) != 0) {
+  if (mozilla::ipc::send_line(fd, str) != 0) {
     LOG("Reply AT+VGS= failed");
   }
 }
-
+/*
 void*
 BluetoothHfpManager::AcceptInternal(void* ptr)
 {
@@ -304,11 +311,12 @@ static void pressKey(uint16_t keyCode)
   sendEvent(uinputFd, EV_KEY, keyCode, false);
   sendEvent(uinputFd, EV_SYN, SYN_REPORT, 0);
 }
+*/
 
 void*
 BluetoothHfpManager::MessageHandler(void* ptr)
 {
-  BluetoothSocket* socket = static_cast<BluetoothSocket*>(ptr);
+  BluetoothNewSocket* socket = static_cast<BluetoothNewSocket*>(ptr);
   int err;
   sStopEventLoopFlag = false;
 
@@ -317,16 +325,21 @@ BluetoothHfpManager::MessageHandler(void* ptr)
     int timeout = 500; //0.5 sec
     char buf[256];
 
-    const char *ret = BluetoothSocket::get_line(socket->mFd,
-        buf, sizeof(buf),
-        timeout,
-        &err);
+    const char *ret = socket->GetLine(buf, sizeof(buf), timeout, &err);
 
     if (ret == NULL) {
       LOG("HFP: Read Nothing");
     } else {
       LOG("HFP: Received:%s", ret);
-
+      
+      if (!strncmp(ret, "AT+BRSF=", 8)) {
+        reply_brsf(socket->mFd);
+        reply_ok(socket->mFd);
+      } else {
+        LOG("Not handled.");
+        reply_ok(socket->mFd);
+      }
+/*
       if (!strncmp(ret, "AT+BRSF=", 8)) {
         reply_brsf(socket->mFd);
         reply_ok(socket->mFd);
@@ -381,9 +394,9 @@ BluetoothHfpManager::MessageHandler(void* ptr)
         LOG("Not handled.");
         reply_ok(socket->mFd);
       }
+      */
     }
   }
 
   return NULL;
 }
-*/

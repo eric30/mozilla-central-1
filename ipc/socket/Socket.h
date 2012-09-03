@@ -46,8 +46,7 @@ public:
   virtual ~SocketConsumer() {}
   virtual void ReceiveSocketData(SocketRawData* aMessage) = 0;
   void SendSocketData(SocketRawData* aMessage);
-  void SetFd(int aFd) { mFd = aFd; }
-private:
+  const char* GetLine(char* buf, int len, int timeout_ms, int *err);
   int mFd;
 };
 
@@ -58,10 +57,16 @@ void
 RemoveSocketWatcher(SocketConsumer* s, int fd);
 
 int
-GetNewSocket(int type, const char* aAddress, int channel, bool auth, bool encrypt);
+GetNewSocket(int aType, bool aAuth, bool aEncrypt);
+
+int
+Connect(int aFd, int aType, int aChannel, const char* aAddress);
 
 int
 CloseSocket(int aFd);
+
+int 
+send_line(int fd, const char* line);
 
 } // namespace ipc
 } // namepsace mozilla

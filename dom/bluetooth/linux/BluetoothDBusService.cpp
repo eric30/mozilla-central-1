@@ -1754,8 +1754,9 @@ public:
 
     nsString address = GetAddressFromObjectPath(mObjectPath);
     int channel = GetDeviceServiceChannel(mObjectPath, mServiceUUID, 0x0004);
-    int fd = mozilla::ipc::GetNewSocket(mType, NS_ConvertUTF16toUTF8(address).get(),
-                                        channel, mAuth, mEncrypt);
+    //int fd = mozilla::ipc::GetNewSocket(mType, NS_ConvertUTF16toUTF8(address).get(),
+    //                                    channel, mAuth, mEncrypt);
+    int fd = -1;
 
     LOG("Address: %s, Channel: %d, fd: %d", NS_ConvertUTF16toUTF8(address), channel, fd);
 

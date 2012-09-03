@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <errno.h>
 
+#include <sys/poll.h>
 #include <sys/socket.h>
 
 #include <bluetooth/bluetooth.h>
@@ -31,12 +32,14 @@
 #undef LOG
 #if defined(MOZ_WIDGET_GONK)
 #include <android/log.h>
-#define LOG(args...)  __android_log_print(ANDROID_LOG_INFO, "Gonk", args)
+#define LOG(args...)  __android_log_print(ANDROID_LOG_INFO, "Socket", args)
 #else
 #define LOG(args...)  printf(args);
 #endif
+
 #define TYPE_AS_STR(t)                                                  \
   ((t) == TYPE_RFCOMM ? "RFCOMM" : ((t) == TYPE_SCO ? "SCO" : "L2CAP"))
+
 
 namespace mozilla {
 namespace ipc {
@@ -173,7 +176,7 @@ SocketManager::AddSocket(SocketConsumer* s, int fd)
     return false;
   }
 
-  s->SetFd(fd);
+  s->mFd = fd;
   SocketWatcher* w = new SocketWatcher(s);
   mWatchers.Put(fd, w);
   if (!mIOLoop->WatchFileDescriptor(fd,
@@ -300,14 +303,14 @@ SocketManager::OnFileCanWriteWithoutBlocking(int fd)
 
 
 int
-OpenSocket(int type, const char* aAddress, int channel, bool auth, bool encrypt)
+OpenSocket(int aType, bool aAuth, bool aEncrypt)
 {
   MOZ_ASSERT(!NS_IsMainThread());
   int lm = 0;
   int fd = -1;
   int sndbuf;
 
-  switch (type) {
+  switch (aType) {
   case TYPE_RFCOMM:
     fd = socket(PF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
     break;
@@ -327,16 +330,16 @@ OpenSocket(int type, const char* aAddress, int channel, bool auth, bool encrypt)
   }
 
   /* kernel does not yet support LM for SCO */
-  switch (type) {
+  switch (aType) {
   case TYPE_RFCOMM:
-    lm |= auth ? RFCOMM_LM_AUTH : 0;
-    lm |= encrypt ? RFCOMM_LM_ENCRYPT : 0;
-    lm |= (auth && encrypt) ? RFCOMM_LM_SECURE : 0;
+    lm |= aAuth ? RFCOMM_LM_AUTH : 0;
+    lm |= aEncrypt ? RFCOMM_LM_ENCRYPT : 0;
+    lm |= (aAuth && aEncrypt) ? RFCOMM_LM_SECURE : 0;
     break;
   case TYPE_L2CAP:
-    lm |= auth ? L2CAP_LM_AUTH : 0;
-    lm |= encrypt ? L2CAP_LM_ENCRYPT : 0;
-    lm |= (auth && encrypt) ? L2CAP_LM_SECURE : 0;
+    lm |= aAuth ? L2CAP_LM_AUTH : 0;
+    lm |= aEncrypt ? L2CAP_LM_ENCRYPT : 0;
+    lm |= (aAuth && aEncrypt) ? L2CAP_LM_SECURE : 0;
     break;
   }
 
@@ -347,7 +350,7 @@ OpenSocket(int type, const char* aAddress, int channel, bool auth, bool encrypt)
     }
   }
 
-  if (type == TYPE_RFCOMM) {
+  if (aType == TYPE_RFCOMM) {
     sndbuf = RFCOMM_SO_SNDBUF;
     if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf))) {
       LOG("setsockopt(SO_SNDBUF) failed, throwing");
@@ -358,56 +361,6 @@ OpenSocket(int type, const char* aAddress, int channel, bool auth, bool encrypt)
   int n = 1;
   setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &n, sizeof(n));
   
-  socklen_t addr_sz;
-  struct sockaddr *addr;
-  bdaddr_t bd_address_obj;
-
-  int mPort = channel;
-
-  char mAddress[18];
-  mAddress[17] = '\0';
-  strncpy(&mAddress[0], aAddress, 17);
-
-  if (get_bdaddr(aAddress, &bd_address_obj)) {
-    NS_WARNING("Can't get bluetooth address!");
-    return -1;
-  }
-
-  switch (type) {
-  case TYPE_RFCOMM:
-    struct sockaddr_rc addr_rc;
-    addr = (struct sockaddr *)&addr_rc;
-    addr_sz = sizeof(addr_rc);
-
-    memset(addr, 0, addr_sz);
-    addr_rc.rc_family = AF_BLUETOOTH;
-    addr_rc.rc_channel = mPort;
-    memcpy(&addr_rc.rc_bdaddr, &bd_address_obj, sizeof(bdaddr_t));
-    break;
-  case TYPE_SCO:
-    struct sockaddr_sco addr_sco;
-    addr = (struct sockaddr *)&addr_sco;
-    addr_sz = sizeof(addr_sco);
-
-    memset(addr, 0, addr_sz);
-    addr_sco.sco_family = AF_BLUETOOTH;
-    memcpy(&addr_sco.sco_bdaddr, &bd_address_obj, sizeof(bdaddr_t));
-    break;
-  default:
-    NS_WARNING("Socket type unknown!");
-    return -1;
-  }
-
-  int ret = connect(fd, addr, addr_sz);
-
-  if (ret) {
-#if DEBUG
-    LOG("Socket connect errno=%d\n", errno);
-#endif
-    NS_WARNING("Socket connect error!");
-    return -1;
-  }
-
   // Match android_bluetooth_HeadsetBase.cpp line 384
   // Skip many lines
   return fd;
@@ -424,7 +377,60 @@ StartManager(Monitor* aMonitor, bool* aSuccess)
 };
 
 int
-GetNewSocket(int type, const char* aAddress, int channel, bool auth, bool encrypt)
+Connect(int aFd, int aType, int aChannel, const char* aAddress)
+{
+  socklen_t addr_sz;
+  struct sockaddr *addr;
+  bdaddr_t bd_address_obj;
+
+  LOG("Connect !!!!");
+
+  if (get_bdaddr(aAddress, &bd_address_obj)) {
+    LOG("Terrible bd address: %s", aAddress);
+    return false;
+  }
+
+  if (aFd <= 0) {
+    LOG("Fd = %d, which  is not valid", aFd);
+    return false;
+  }
+ 
+  switch (aType) {
+  case TYPE_RFCOMM:
+    struct sockaddr_rc addr_rc;
+    addr = (struct sockaddr *)&addr_rc;
+    addr_sz = sizeof(addr_rc);
+
+    memset(addr, 0, addr_sz);
+    addr_rc.rc_family = AF_BLUETOOTH;
+    addr_rc.rc_channel = aChannel;
+    memcpy(&addr_rc.rc_bdaddr, &bd_address_obj, sizeof(bdaddr_t));
+    break;
+  case TYPE_SCO:
+    struct sockaddr_sco addr_sco;
+    addr = (struct sockaddr *)&addr_sco;
+    addr_sz = sizeof(addr_sco);
+
+    memset(addr, 0, addr_sz);
+    addr_sco.sco_family = AF_BLUETOOTH;
+    memcpy(&addr_sco.sco_bdaddr, &bd_address_obj, sizeof(bdaddr_t));
+    break;
+  default:
+    NS_WARNING("Socket type unknown!");
+    return -1;
+  }
+
+  int ret = connect(aFd, addr, addr_sz);
+
+  if (ret < 0) {
+    LOG("Socket connect errno=%d\n", errno);
+  }
+
+  return ret;
+}
+
+int
+GetNewSocket(int aType, bool aAuth, bool aEncrypt)
 {
   if (!sManager)
   {
@@ -438,14 +444,17 @@ GetNewSocket(int type, const char* aAddress, int channel, bool auth, bool encryp
       lock.Wait();
     }
   }
-  return OpenSocket(type, aAddress, channel, auth, encrypt);
+
+  return OpenSocket(aType, aAuth, aEncrypt);
 }
+
 
 int
 CloseSocket(int aFd)
 {
   // This can block since we aren't opening sockets O_NONBLOCK
   MOZ_ASSERT(!NS_IsMainThread());
+
   return close(aFd);
 }
 
@@ -460,6 +469,120 @@ RemoveSocketWatcher(SocketConsumer* s, int fd)
 {
   sManager->RemoveSocket(s, fd);
 }
+
+static inline int write_error_check(int fd, const char* line, int len) 
+{
+  int ret;
+
+  errno = 0;
+  ret = write(fd, line, len);
+  if (ret < 0) {
+    LOG("%s: write() failed: %s (%d)", __FUNCTION__, strerror(errno),
+        errno);
+    return -1;
+  }
+  if (ret != len) {
+    LOG("%s: write() only wrote %d of %d bytes", __FUNCTION__, ret, len);
+    return -1;
+  }
+  return 0;
+}
+
+int
+send_line(int fd, const char* line)
+{
+  int CRLF_LEN = 2;
+
+  int nw;
+  int len = strlen(line);
+  int llen = len + CRLF_LEN * 2 + 1;
+  char *buffer = (char *)calloc(llen, sizeof(char));
+
+  snprintf(buffer, llen, "%s%s%s", "\xd\xa", line, "\xd\xa");
+
+  if (write_error_check(fd, buffer, llen - 1)) {
+    free(buffer);
+    return -1;
+  }
+
+  free(buffer);
+  return 0;
+}
+
+const char*
+SocketConsumer::GetLine(char *buf, int len, int timeout_ms, int *err)
+{
+  char *bufit=buf;
+  int fd_flags = fcntl(mFd, F_GETFL, 0);
+  struct pollfd pfd;
+
+again:
+  *bufit = 0;
+  pfd.fd = mFd;
+  pfd.events = POLLIN;
+  *err = errno = 0;
+  int ret = poll(&pfd, 1, timeout_ms);
+  if (ret < 0) {
+    LOG("poll() error\n");
+    *err = errno;
+    return NULL;
+  }
+  if (ret == 0) {
+    return NULL;
+  }
+
+  if (pfd.revents & (POLLHUP | POLLERR | POLLNVAL)) {
+    LOG("RFCOMM poll() returned success (%d), "
+        "but with an unexpected revents bitmask: %#x\n", ret, pfd.revents);
+    errno = EIO;
+    *err = errno;
+    return NULL;
+  }
+
+  while ((int)(bufit - buf) < (len - 1))
+  {
+    errno = 0;
+    int rc = read(mFd, bufit, 1);
+
+    if (!rc)
+      break;
+
+    if (rc < 0) {
+      if (errno == EBUSY) {
+        LOG("read() error %s (%d): repeating read()...",
+            strerror(errno), errno);
+        goto again;
+      }
+      *err = errno;
+      LOG("read() error %s (%d)", strerror(errno), errno);
+      return NULL;
+    }
+
+    if (*bufit=='\xd') {
+      break;
+    }
+
+    if (*bufit=='\xa')
+      bufit = buf;
+    else
+      bufit++;
+  }
+
+  *bufit = NULL;
+
+  // According to ITU V.250 section 5.1, IA5 7 bit chars are used,
+  // the eighth bit or higher bits are ignored if they exists
+  // We mask out only eighth bit, no higher bit, since we do char
+  // string here, not wide char.
+  // We added this processing due to 2 real world problems.
+  // 1 BMW 2005 E46 which sends binary junk
+  // 2 Audi 2010 A3, dial command use 0xAD (soft-hyphen) as number
+  // formater, which was rejected by the AT handler
+  //mask_eighth_bit(buf);
+
+  return buf;
+}
+
 
 } // namespace ipc
 } // namespace mozilla
