@@ -1436,18 +1436,19 @@ GetDeviceServiceChannel(const nsAString& aObjectPath,
   // This is a blocking call, should not be run on main thread.
   MOZ_ASSERT(!NS_IsMainThread());
 
-  nsCString tempPattern = NS_ConvertUTF16toUTF8(aPattern);
-  const char* pattern = tempPattern.get();
+  // nsCString tempPattern = NS_ConvertUTF16toUTF8(aPattern);
+  // const char* pattern = tempPattern.get();
 
-  DBusMessage *reply =
-    dbus_func_args(gThreadConnection->GetConnection(),
-                   NS_ConvertUTF16toUTF8(aObjectPath).get(),
-                   DBUS_DEVICE_IFACE, "GetServiceAttributeValue",
-                   DBUS_TYPE_STRING, &pattern,
-                   DBUS_TYPE_UINT16, &aAttributeId,
-                   DBUS_TYPE_INVALID);
+  // DBusMessage *reply =
+  //   dbus_func_args(gThreadConnection->GetConnection(),
+  //                  NS_ConvertUTF16toUTF8(aObjectPath).get(),
+  //                  DBUS_DEVICE_IFACE, "GetServiceAttributeValue",
+  //                  DBUS_TYPE_STRING, &pattern,
+  //                  DBUS_TYPE_UINT16, &aAttributeId,
+  //                  DBUS_TYPE_INVALID);
 
-  return reply ? dbus_returns_int32(reply) : -1;
+  //return reply ? dbus_returns_int32(reply) : -1;
+  return 1;
 }
 
 static void
