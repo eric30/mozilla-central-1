@@ -18,10 +18,11 @@ public:
   static BluetoothHfpManager* GetManager();
 
   bool Connect(int channel, const char* asciiAddress);
+
   /*
+  bool ReachedMaxConnection();
   bool Listen(int channel);
   void Disconnect();
-  bool ReachedMaxConnection();
   void Close();
   */
 
@@ -38,7 +39,6 @@ protected:
   pthread_t mAcceptThread;
   */
   BluetoothNewSocket* mSocket;
-  BluetoothNewSocket* mServerSocket;
   bool mConnected;
   int mChannel;
   char* mAddress;

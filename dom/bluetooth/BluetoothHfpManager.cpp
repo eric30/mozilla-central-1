@@ -16,14 +16,12 @@
 
 USING_BLUETOOTH_NAMESPACE
 
-static BluetoothHfpManager* sInstance = NULL;
+static BluetoothHfpManager* sInstance = nullptr;
 static bool sStopEventLoopFlag = false;
 static bool sStopAcceptFlag = false;
-static int uinputFd = -1;
 static int sCurrentVgs = 7;
 
 BluetoothHfpManager::BluetoothHfpManager() : mSocket(nullptr)
-                                           , mServerSocket(nullptr)
                                            , mConnected(false)
                                            , mChannel(-1)
                                            , mAddress(nullptr)
@@ -33,7 +31,7 @@ BluetoothHfpManager::BluetoothHfpManager() : mSocket(nullptr)
 BluetoothHfpManager*
 BluetoothHfpManager::GetManager()
 {
-  if (sInstance == NULL)
+  if (sInstance == nullptr)
   {
     sInstance = new BluetoothHfpManager();
   }
@@ -247,71 +245,6 @@ void reply_vgs(int fd)
     LOG("Reply AT+VGS= failed");
   }
 }
-/*
-void*
-BluetoothHfpManager::AcceptInternal(void* ptr)
-{
-  BluetoothSocket* serverSocket = static_cast<BluetoothSocket*>(ptr);
-
-  // TODO(Eric)
-  // Need to let it break the while loop
-  sStopAcceptFlag = false;
-
-  while (!sStopAcceptFlag) {
-    int newFd = serverSocket->Accept();
-
-    if (newFd <= 0) {
-      LOG("Error occurs after accepting:%s", __FUNCTION__);
-    }
-
-    BluetoothHfpManager* manager = BluetoothHfpManager::GetManager();
-
-    if (manager->mSocket != NULL) {
-      manager->mSocket->Disconnect();
-    }
-
-    manager->mSocket = new BluetoothSocket(BluetoothSocket::TYPE_RFCOMM, newFd);
-
-    pthread_create(&manager->mEventThread, NULL, BluetoothHfpManager::MessageHandler, manager->mSocket);
-
-    usleep(5000);
-
-    // Connect ok, next : establish a SCO link
-    BluetoothScoManager* scoManager = BluetoothScoManager::GetManager();
-
-    if (!scoManager->IsConnected()) {
-      const char* address = serverSocket->GetAddress();
-      LOG("[ERIC] SCO address : %s", address);
-      scoManager->Connect(address);
-    }
-
-    // reply_vgs(newFd);
-  }
-
-  return NULL;
-}
-
-static int sendEvent(int fd, uint16_t type, uint16_t code, int32_t value)
-{
-  struct input_event event;
-
-  memset(&event, 0, sizeof(event));
-  event.type = type;
-  event.code = code;
-  event.value = value;
-
-  return write(fd, &event, sizeof(event));
-}
-
-static void pressKey(uint16_t keyCode)
-{
-  sendEvent(uinputFd, EV_KEY, keyCode, true);
-  sendEvent(uinputFd, EV_SYN, SYN_REPORT, 0);
-
-  sendEvent(uinputFd, EV_KEY, keyCode, false);
-  sendEvent(uinputFd, EV_SYN, SYN_REPORT, 0);
-}
-*/
 
 void*
 BluetoothHfpManager::MessageHandler(void* ptr)
