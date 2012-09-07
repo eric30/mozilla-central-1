@@ -1775,7 +1775,7 @@ public:
     int fd = mozilla::ipc::GetNewSocket(mType, NS_ConvertUTF16toUTF8(address).get(),
                                         channel, mAuth, mEncrypt);
 
-    LOG("Address: %s, Channel: %d, fd: %d", NS_ConvertUTF16toUTF8(address), channel, fd);
+    LOG("Address: %s, Channel: %d, fd: %d", NS_ConvertUTF16toUTF8(address).get(), channel, fd);
 
     BluetoothValue v;
     nsString replyError;
