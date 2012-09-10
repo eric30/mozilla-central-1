@@ -1750,12 +1750,14 @@ class CreateBluetoothSocketRunnable : public nsRunnable
 {
 public:
   CreateBluetoothSocketRunnable(BluetoothReplyRunnable* aRunnable,
+                                SocketConsumer* aSocketConsumer,
                                 const nsAString& aObjectPath,
                                 const nsAString& aServiceUUID,
                                 int aType,
                                 bool aAuth,
                                 bool aEncrypt)
     : mRunnable(dont_AddRef(aRunnable)),
+      mSocketConsumer(aSocketConsumer),
       mObjectPath(aObjectPath),
       mServiceUUID(aServiceUUID),
       mType(aType),
@@ -1785,6 +1787,8 @@ public:
       return NS_ERROR_FAILURE;
     }
 
+    AddSocketWatcher(mSocketConsumer, fd);
+
     v = (uint32_t)fd;
 
     DispatchBluetoothReply(mRunnable, v, replyError);
@@ -1794,6 +1798,7 @@ public:
 
 private:
   nsRefPtr<BluetoothReplyRunnable> mRunnable;
+  nsRefPtr<SocketConsumer> mSocketConsumer;
   nsString mObjectPath;
   nsString mServiceUUID;
   int mType;
@@ -1807,6 +1812,7 @@ BluetoothDBusService::GetSocketViaService(const nsAString& aObjectPath,
                                           int aType,
                                           bool aAuth,
                                           bool aEncrypt,
+                                          SocketConsumer* aSocketConsumer,
                                           BluetoothReplyRunnable* aRunnable)
 {
   NS_ASSERTION(NS_IsMainThread(), "Must be called from main thread!");
@@ -1816,7 +1822,9 @@ BluetoothDBusService::GetSocketViaService(const nsAString& aObjectPath,
   }
   nsRefPtr<BluetoothReplyRunnable> runnable = aRunnable;
 
-  nsRefPtr<nsRunnable> func(new CreateBluetoothSocketRunnable(runnable, aObjectPath,
+  nsRefPtr<nsRunnable> func(new CreateBluetoothSocketRunnable(runnable, 
+                                                              aSocketConsumer,
+                                                              aObjectPath,
                                                               aService, aType,
                                                               aAuth, aEncrypt));
   if (NS_FAILED(mBluetoothCommandThread->Dispatch(func, NS_DISPATCH_NORMAL))) {
