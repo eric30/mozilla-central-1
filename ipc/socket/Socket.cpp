@@ -113,12 +113,11 @@ public:
   Run()
   {
     mConsumer->ReceiveSocketData(mRawData);
-    delete mRawData;
     return NS_OK;
   }
 private:
   nsRefPtr<SocketConsumer> mConsumer;
-  SocketRawData* mRawData;
+  nsAutoPtr<SocketRawData> mRawData;
 };
 
 class SocketSendTask : public Task
@@ -183,7 +182,6 @@ SocketManager::AddSocket(SocketConsumer* s, int fd)
                                     this)) {
     return false;
   }
-  printf("Set! Connected!");
   return true;
 }
 
@@ -205,13 +203,11 @@ SocketManager::OnFileCanReadWithoutBlocking(int fd)
   //     data available on the socket
   //     If so, break;
 
-  NS_WARNING("GOT SOME DATA!");
   while (true) {
     if (!mIncoming) {
       mIncoming = new SocketRawData();
       ssize_t ret = read(fd, mIncoming->mData, SocketRawData::MAX_DATA_SIZE);
       if (ret <= 0) {
-        NS_WARNING("DATA PROBLEM!");        
         if (ret == -1) {
           if (errno == EINTR) {
             continue; // retry system call when interrupted
@@ -230,9 +226,7 @@ SocketManager::OnFileCanReadWithoutBlocking(int fd)
         close(fd);
         return;
       }
-      printf("Data %d\n", ret);
       mIncoming->mData[ret] = 0;
-      printf("%s\n", mIncoming->mData);
       mIncoming->mSize = ret;
       nsRefPtr<SocketReceiveTask> t =
         new SocketReceiveTask(mWatchers.Get(fd)->mConsumer, mIncoming.forget());
