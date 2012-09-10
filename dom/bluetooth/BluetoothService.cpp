@@ -201,16 +201,6 @@ BluetoothService::StartStopBluetooth(bool aStart)
 {
   MOZ_ASSERT(NS_IsMainThread());
 
-#ifdef DEBUG
-  if (aStart && mLastRequestedEnable) {
-    MOZ_ASSERT(false, "Calling Start twice in a row!");
-  }
-  else if (!aStart && !mLastRequestedEnable) {
-    MOZ_ASSERT(false, "Calling Stop twice in a row!");
-  }
-  mLastRequestedEnable = aStart;
-#endif
-
   if (gInShutdown) {
     if (aStart) {
       // Don't try to start if we're already shutting down.
