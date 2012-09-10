@@ -14,6 +14,8 @@
 #include "nsIThread.h"
 #include "nsTObserverArray.h"
 
+#include "mozilla/ipc/Socket.h"
+
 BEGIN_BLUETOOTH_NAMESPACE
 
 class BluetoothManager;
@@ -256,6 +258,7 @@ public:
                       int aType,
                       bool aAuth,
                       bool aEncrypt,
+                      mozilla::ipc::SocketConsumer* aSocketConsumer,
                       BluetoothReplyRunnable* aRunnable) = 0;
 
   virtual bool
