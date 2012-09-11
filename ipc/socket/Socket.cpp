@@ -107,6 +107,8 @@ public:
     mConsumer(aConsumer),
     mRawData(aData)
   {
+    MOZ_ASSERT(aConsumer);
+    MOZ_ASSERT(aData);
   }
 
   NS_IMETHOD
