@@ -138,7 +138,7 @@ BluetoothHfpManager::ReceiveSocketData(SocketRawData* aMessage)
   if (!strncmp(msg, "AT+BRSF=", 8)) {
     ReplyBrsf();
     ReplyOk();
-  }else if (!strncmp(msg, "AT+CIND=?", 9)) {
+  } else if (!strncmp(msg, "AT+CIND=?", 9)) {
     ReplyCindRange();
     ReplyOk();
   } else if (!strncmp(msg, "AT+CIND", 7)) {
@@ -149,7 +149,7 @@ BluetoothHfpManager::ReceiveSocketData(SocketRawData* aMessage)
   } else if (!strncmp(msg, "AT+CHLD=?", 9)) {
     ReplyChldRange();
     ReplyOk();
-  } else if (!strncmp(msg, "AT+CHLD=", 9)) {
+  } else if (!strncmp(msg, "AT+CHLD=", 8)) {
     ReplyOk();
   } else {
     LOG("Unhandled message, reply ok");
@@ -192,9 +192,6 @@ BluetoothHfpManager::Disconnect(BluetoothReplyRunnable* aRunnable)
     NS_WARNING("BluetoothService not available!");
     return nullptr;
   }
-
-  nsString serviceUuidStr =
-    NS_ConvertUTF8toUTF16(mozilla::dom::bluetooth::BluetoothServiceUuidStr::Handsfree);
 
   nsRefPtr<BluetoothReplyRunnable> runnable = aRunnable;
 
