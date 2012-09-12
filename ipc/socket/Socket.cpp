@@ -88,7 +88,7 @@ struct SocketManager : public RefCounted<SocketManager>,
   virtual void OnFileCanWriteWithoutBlocking(int fd);
 
   bool AddSocket(SocketConsumer* s, int fd);
-  bool RemoveSocket(SocketConsumer* s, int fd);
+  bool RemoveSocket(SocketConsumer* s);
 
   nsAutoPtr<SocketRawData> mIncoming;
   MessageLoopForIO* mIOLoop;  
@@ -174,7 +174,7 @@ SocketManager::AddSocket(SocketConsumer* s, int fd)
     return false;
   }
 
-  s->SetFd(fd);
+  s->mFd = fd;
   SocketWatcher* w = new SocketWatcher(s);
   mWatchers.Put(fd, w);
   if (!mIOLoop->WatchFileDescriptor(fd,
@@ -188,8 +188,10 @@ SocketManager::AddSocket(SocketConsumer* s, int fd)
 }
 
 bool
-SocketManager::RemoveSocket(SocketConsumer* s, int fd)
+SocketManager::RemoveSocket(SocketConsumer* s)
 {
+  mWatchers.Remove(s->mFd);
+  CloseSocket(s->mFd);
   return true;
 }
 
@@ -440,8 +442,7 @@ GetNewSocket(int type, const char* aAddress, int channel, bool auth, bool encryp
 int
 CloseSocket(int aFd)
 {
-  // This can block since we aren't opening sockets O_NONBLOCK
-  MOZ_ASSERT(!NS_IsMainThread());
+  // This won't block since we are making sockets O_NONBLOCK
   return close(aFd);
 }
 
@@ -452,9 +453,9 @@ AddSocketWatcher(SocketConsumer* s, int fd)
 }
 
 void
-RemoveSocketWatcher(SocketConsumer* s, int fd)
+RemoveSocketWatcher(SocketConsumer* s)
 {
-  sManager->RemoveSocket(s, fd);
+  sManager->RemoveSocket(s);
 }
 
 } // namespace ipc

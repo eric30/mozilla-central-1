@@ -46,8 +46,6 @@ public:
   virtual ~SocketConsumer() {}
   virtual void ReceiveSocketData(SocketRawData* aMessage) = 0;
   void SendSocketData(SocketRawData* aMessage);
-  void SetFd(int aFd) { mFd = aFd; }
-private:
   int mFd;
 };
 
@@ -55,7 +53,7 @@ void
 AddSocketWatcher(SocketConsumer* s, int fd);
 
 void
-RemoveSocketWatcher(SocketConsumer* s, int fd);
+RemoveSocketWatcher(SocketConsumer* s);
 
 int
 GetNewSocket(int type, const char* aAddress, int channel, bool auth, bool encrypt);
