@@ -1,7 +1,8 @@
 #include "base/basictypes.h"
-
-#include "BluetoothTypes.h"
 #include "BluetoothHfpManager.h"
+
+#include "BluetoothRilListener.h"
+#include "BluetoothTypes.h"
 #include "BluetoothReplyRunnable.h"
 #include "BluetoothService.h"
 #include "BluetoothServiceUuid.h"
@@ -21,13 +22,58 @@
 USING_BLUETOOTH_NAMESPACE
 
 static BluetoothHfpManager* sInstance = nullptr;
+static bool sStopSendingRingFlag = true;
+static nsCOMPtr<nsIThread> sHfpCommandThread;
 
 const char* kHfpCRLF = "\xd\xa";
+
+static void
+SendLine(const char* msg)
+{
+  char response[256] = {'\0'};
+
+  strcat(response, kHfpCRLF);
+  strcat(response, msg);
+  strcat(response, kHfpCRLF);
+
+  mozilla::ipc::SocketRawData* s = new mozilla::ipc::SocketRawData(response);
+
+  BluetoothHfpManager* hfp = BluetoothHfpManager::GetManager();
+  hfp->SendSocketData(s);
+}
+
+class SendRingIndicatorTask : public nsRunnable
+{
+public:
+  SendRingIndicatorTask()
+  {
+    MOZ_ASSERT(NS_IsMainThread());
+  }
+
+  NS_IMETHOD Run()
+  {
+    MOZ_ASSERT(!NS_IsMainThread());
+
+    while (!sStopSendingRingFlag) {
+      SendLine("RING");
+      LOG("Sending RING...");
+
+      usleep(3000000);
+    }
+
+    return NS_OK;
+  }
+};
 
 BluetoothHfpManager::BluetoothHfpManager() : mConnected(false)
                                            , mChannel(-1)
                                            , mAddress(nullptr)
+                                           , mCurrentCallState(0)
 {
+  mRilListener = new BluetoothRilListener(this);
+  mRilListener->StartListening();
+
+  NS_NewThread(getter_AddRefs(sHfpCommandThread));
 }
 
 BluetoothHfpManager*
@@ -43,89 +89,59 @@ BluetoothHfpManager::GetManager()
 
 BluetoothHfpManager::~BluetoothHfpManager()
 {
+  delete mRilListener;
+}
 
+void
+BluetoothHfpManager::SendLine(const char* msg)
+{
+  char response[256] = {'\0'};
+
+  strcat(response, kHfpCRLF);
+  strcat(response, msg);
+  strcat(response, kHfpCRLF);
+
+  mozilla::ipc::SocketRawData* s = new mozilla::ipc::SocketRawData(response);
+  SendSocketData(s);
 }
 
 void
 BluetoothHfpManager::ReplyCindCurrentStatus()
 {
   const char* str = "+CIND: 5,5,1,0,0,0,0";
-	char response[256] = {'\0'};
-
-  strcat(response, kHfpCRLF);
-  strcat(response, str);
-  strcat(response, kHfpCRLF);
-
-  mozilla::ipc::SocketRawData* s = new mozilla::ipc::SocketRawData(response);
-  SendSocketData(s);
+  SendLine(str);
 }
 
 void
 BluetoothHfpManager::ReplyCindRange()
 {
   const char* str = "+CIND: (\"battchg\",(0-5)),(\"signal\",(0-5)),(\"service\",(0,1)),(\"call\",(0,1)),(\"callsetup\",(0-3)),(\"callheld\",(0-2)),(\"roam\",(0,1))";
-
-	char response[256] = {'\0'};
-
-  strcat(response, kHfpCRLF);
-  strcat(response, str);
-  strcat(response, kHfpCRLF);
-
-  mozilla::ipc::SocketRawData* s = new mozilla::ipc::SocketRawData(response);
-  SendSocketData(s);
+  SendLine(str);
 }
 
 void
 BluetoothHfpManager::ReplyCmer(bool enableIndicator)
 {
   const char* str = enableIndicator ? "+CMER: 3,0,0,1" : "+CMER: 3,0,0,0";
-	char response[256] = {'\0'};
-
-  strcat(response, kHfpCRLF);
-  strcat(response, str);
-  strcat(response, kHfpCRLF);
-
-  mozilla::ipc::SocketRawData* s = new mozilla::ipc::SocketRawData(response);
-  SendSocketData(s);
+  SendLine(str);
 }
 
 void
 BluetoothHfpManager::ReplyChldRange()
 {
-	char response[256] = {'\0'};
-
-  strcat(response, kHfpCRLF);
-  strcat(response, "+CHLD: (0,1,2,3)");
-  strcat(response, kHfpCRLF);
-
-  mozilla::ipc::SocketRawData* s = new mozilla::ipc::SocketRawData(response);
-  SendSocketData(s);
+  SendLine("+CHLD: (0,1,2,3)");
 }
 
 void
 BluetoothHfpManager::ReplyBrsf()
 {
-	char response[256] = {'\0'};
-
-  strcat(response, kHfpCRLF);
-  strcat(response, "+BRSF: 352");
-  strcat(response, kHfpCRLF);
-
-  mozilla::ipc::SocketRawData* s = new mozilla::ipc::SocketRawData(response);
-  SendSocketData(s);
+  SendLine("+BRSF: 352");
 }
 
 void
 BluetoothHfpManager::ReplyOk()
 {
-  char response[256] = {'\0'};
-
-  strcat(response, kHfpCRLF);
-  strcat(response, "OK");
-  strcat(response, kHfpCRLF);
-
-  mozilla::ipc::SocketRawData* s = new mozilla::ipc::SocketRawData(response);
-  SendSocketData(s);
+  SendLine("OK");
 }
 
 void
@@ -200,4 +216,82 @@ BluetoothHfpManager::Disconnect(BluetoothReplyRunnable* aRunnable)
   runnable.forget();
 
   return NS_FAILED(rv) ? false : true;
+}
+
+void
+BluetoothHfpManager::CallStateChanged(int aCallIndex, int aCallState, 
+                                      const char* aNumber, bool aIsActive)
+{
+  LOG("Get call state changed: index=%d, state=%d, number=%s, active=%d", 
+      aCallIndex, aCallState, aNumber, aIsActive);
+
+  nsRefPtr<nsRunnable> sendRingTask = nullptr;
+
+  switch (aCallState) {
+    case nsIRadioInterfaceLayer::CALL_STATE_INCOMING:
+      // Send "CallSetup = 1"
+      SendLine("+CIEV: 5,1");
+
+      // Start sending RING indicator to HF
+      sStopSendingRingFlag = false;
+      sendRingTask = new SendRingIndicatorTask();
+      sHfpCommandThread->Dispatch(sendRingTask, NS_DISPATCH_NORMAL);
+      break;
+    case nsIRadioInterfaceLayer::CALL_STATE_DIALING:
+      // Send "CallSetup = 2"
+      SendLine("+CIEV: 5,2");
+      break;
+    case nsIRadioInterfaceLayer::CALL_STATE_ALERTING:
+      // Send "CallSetup = 3"
+      if (mCurrentCallIndex == nsIRadioInterfaceLayer::CALL_STATE_DIALING) {
+        SendLine("+CIEV: 5,3");
+      } else {
+        LOG("HFP MSG ERROR: Impossible state changed from %d to %d", mCurrentCallState, aCallState);
+      }
+      break;
+    case nsIRadioInterfaceLayer::CALL_STATE_CONNECTED:
+      switch (mCurrentCallState) {
+        case nsIRadioInterfaceLayer::CALL_STATE_INCOMING:
+          sStopSendingRingFlag = true;
+          // Continue executing, no break
+        case nsIRadioInterfaceLayer::CALL_STATE_DIALING:
+          // Send "Call = 1, CallSetup = 0"
+          SendLine("+CIEV: 4,1");
+          SendLine("+CIEV: 5,0");
+          break;
+        default:
+          LOG("HFP MSG ERROR: Impossible state changed from %d to %d", mCurrentCallState, aCallState);
+          break;
+      }
+
+      //AudioOn();
+      break;
+    case nsIRadioInterfaceLayer::CALL_STATE_DISCONNECTED:
+      switch (mCurrentCallState) {
+        case nsIRadioInterfaceLayer::CALL_STATE_INCOMING:
+          sStopSendingRingFlag = true;
+          // Continue executing, no break
+        case nsIRadioInterfaceLayer::CALL_STATE_DIALING:
+        case nsIRadioInterfaceLayer::CALL_STATE_ALERTING:
+          // Send "CallSetup = 0"
+          SendLine("+CIEV: 5,0");
+          break;
+        case nsIRadioInterfaceLayer::CALL_STATE_CONNECTED:
+          // Send "Call = 0"
+          SendLine("+CIEV: 4,0");
+          break;
+        default:
+          LOG("HFP MSG ERROR: Impossible state changed from %d to %d", mCurrentCallState, aCallState);
+          break;
+      }
+      break;
+
+    default:
+      LOG("Not handled state.");
+      break;
+  }
+
+  // Update mCurrentCallState
+  mCurrentCallIndex = aCallIndex;
+  mCurrentCallState = aCallState;
 }
