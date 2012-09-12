@@ -14,6 +14,12 @@
 
 class DBusMessage;
 
+namespace mozilla {
+namespace ipc {
+class SocketConsumer;
+}
+}
+
 BEGIN_BLUETOOTH_NAMESPACE
 
 /**
@@ -66,7 +72,7 @@ public:
                       mozilla::ipc::SocketConsumer* aSocketConsumer,
                       BluetoothReplyRunnable* aRunnable);
 
-  virtual bool CloseSocket(int aFd, BluetoothReplyRunnable* aRunnable);
+  virtual bool CloseSocket(mozilla::ipc::SocketConsumer* aConsumer, BluetoothReplyRunnable* aRunnable);
 
   virtual nsresult
   CreatePairedDeviceInternal(const nsAString& aAdapterPath,

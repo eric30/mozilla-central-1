@@ -14,8 +14,10 @@
 #include "jsapi.h"
 #include "mozilla/Services.h"
 #include "mozilla/Util.h"
+#include "mozilla/ipc/Socket.h"
 #include "nsContentUtils.h"
 #include "nsIDOMDOMRequest.h"
+#include "nsIObserver.h"
 #include "nsIObserverService.h"
 #include "nsISettingsService.h"
 #include "nsThreadUtils.h"
@@ -67,7 +69,9 @@ public:
       }
 
       if (gInShutdown) {
+        mozilla::ipc::StopSocketManager();
         gBluetoothService = nullptr;
+
       }
     }
 
@@ -432,6 +436,7 @@ BluetoothService::Get()
     return nullptr;
   }
 
+  mozilla::ipc::StartSocketManager();
   gBluetoothService.swap(service);
   return gBluetoothService;
 }

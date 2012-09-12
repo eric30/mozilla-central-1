@@ -25,8 +25,8 @@ struct SocketRawData
   size_t mCurrentWriteOffset;
 
   SocketRawData() :
-    mCurrentWriteOffset(0),
-    mSize(0)
+    mSize(0),
+    mCurrentWriteOffset(0)
   {
   }
   
@@ -50,16 +50,16 @@ public:
 };
 
 void
-AddSocketWatcher(SocketConsumer* s, int fd);
+StartSocketManager();
 
 void
-RemoveSocketWatcher(SocketConsumer* s);
+StopSocketManager();
 
-int
-GetNewSocket(int type, const char* aAddress, int channel, bool auth, bool encrypt);
+bool
+ConnectSocket(SocketConsumer* s, int aType, const char* aAddress, int aChannel, bool aAuth, bool aEncrypt);
 
-int
-CloseSocket(int aFd);
+bool
+CloseSocket(SocketConsumer* s);
 
 } // namespace ipc
 } // namepsace mozilla

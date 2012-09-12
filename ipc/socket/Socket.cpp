@@ -24,6 +24,7 @@
 #include "nsDataHashtable.h"
 #include "nsThreadUtils.h"
 #include "nsTArray.h"
+#include "mozilla/Services.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Util.h"
 #include "nsXULAppAPI.h"
@@ -61,7 +62,7 @@ struct SocketWatcher
 {
   typedef nsTArray<SocketRawData*> SocketRawDataQueue;
   
-  SocketWatcher(SocketConsumer* s) : mConsumer(s)
+  SocketWatcher(SocketConsumer* aConsumer) : mConsumer(aConsumer)
   {
   }
   SocketRawDataQueue mOutgoingQ;
@@ -69,7 +70,6 @@ struct SocketWatcher
   MessageLoopForIO::FileDescriptorWatcher mReadWatcher;
   MessageLoopForIO::FileDescriptorWatcher mWriteWatcher;
 };
-  
 
 struct SocketManager : public RefCounted<SocketManager>,
                        public MessageLoopForIO::Watcher
@@ -84,11 +84,11 @@ struct SocketManager : public RefCounted<SocketManager>,
   {
   }
 
-  virtual void OnFileCanReadWithoutBlocking(int fd);
-  virtual void OnFileCanWriteWithoutBlocking(int fd);
+  virtual void OnFileCanReadWithoutBlocking(int aFd);
+  virtual void OnFileCanWriteWithoutBlocking(int aFd);
 
-  bool AddSocket(SocketConsumer* s, int fd);
-  bool RemoveSocket(SocketConsumer* s);
+  bool AddSocket(SocketConsumer* aConsumer, int aFd);
+  bool RemoveSocket(SocketConsumer* aConsumer);
 
   nsAutoPtr<SocketRawData> mIncoming;
   MessageLoopForIO* mIOLoop;  
@@ -155,157 +155,15 @@ SocketConsumer::SendSocketData(SocketRawData* aData)
                                    new SocketSendTask(aData, mFd));
 }
 
-bool
-SocketManager::AddSocket(SocketConsumer* s, int fd)
-{
-  // Set close-on-exec bit.
-  int flags = fcntl(fd, F_GETFD);
-  if (-1 == flags) {
-    return false;
-  }
-
-  flags |= FD_CLOEXEC;
-  if (-1 == fcntl(fd, F_SETFD, flags)) {
-    return false;
-  }
-
-  // Select non-blocking IO.
-  if (-1 == fcntl(fd, F_SETFL, O_NONBLOCK)) {
-    return false;
-  }
-
-  s->mFd = fd;
-  SocketWatcher* w = new SocketWatcher(s);
-  mWatchers.Put(fd, w);
-  if (!mIOLoop->WatchFileDescriptor(fd,
-                                    true,
-                                    MessageLoopForIO::WATCH_READ,
-                                    &(mWatchers.Get(fd)->mReadWatcher),
-                                    this)) {
-    return false;
-  }
-  return true;
-}
-
-bool
-SocketManager::RemoveSocket(SocketConsumer* s)
-{
-  mWatchers.Remove(s->mFd);
-  CloseSocket(s->mFd);
-  return true;
-}
-
-void
-SocketManager::OnFileCanReadWithoutBlocking(int fd)
-{
-  // Keep reading data until either
-  //
-  //   - mIncoming is completely read
-  //     If so, sConsumer->MessageReceived(mIncoming.forget())
-  //
-  //   - mIncoming isn't completely read, but there's no more
-  //     data available on the socket
-  //     If so, break;
-
-  while (true) {
-    if (!mIncoming) {
-      mIncoming = new SocketRawData();
-      ssize_t ret = read(fd, mIncoming->mData, SocketRawData::MAX_DATA_SIZE);
-      if (ret <= 0) {
-        if (ret == -1) {
-          if (errno == EINTR) {
-            continue; // retry system call when interrupted
-          }
-          else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            return; // no data available: return and re-poll
-          }
-          // else fall through to error handling on other errno's
-        }
-        LOG("Cannot read from network, error %d\n", (int)ret);
-        // At this point, assume that we can't actually access
-        // the socket anymore, and start a reconnect loop.
-        mIncoming.forget();
-        // mReadWatchers.Get(fd)->StopWatchingFileDescriptor();
-        // mWriteWatchers.Get(fd)->StopWatchingFileDescriptor();
-        close(fd);
-        return;
-      }
-      mIncoming->mData[ret] = 0;
-      mIncoming->mSize = ret;
-      nsRefPtr<SocketReceiveTask> t =
-        new SocketReceiveTask(mWatchers.Get(fd)->mConsumer, mIncoming.forget());
-      NS_DispatchToMainThread(t);
-      if (ret < ssize_t(SocketRawData::MAX_DATA_SIZE)) {
-        return;
-      }
-    }
-  }
-}
-
-void
-SocketManager::OnFileCanWriteWithoutBlocking(int fd)
-{
-  // Try to write the bytes of mCurrentRilRawData.  If all were written, continue.
-  //
-  // Otherwise, save the byte position of the next byte to write
-  // within mCurrentRilRawData, and request another write when the
-  // system won't block.
-  //
-  while (true) {
-    SocketRawData* data;
-    SocketWatcher* w;
-    {
-      MutexAutoLock lock(mMutex);
-      w = mWatchers.Get(fd);
-      if (w->mOutgoingQ.IsEmpty()) {
-        return;
-      }
-      data = w->mOutgoingQ.ElementAt(0);
-    }
-    const uint8_t *toWrite;
-
-    toWrite = data->mData;
- 
-    while (data->mCurrentWriteOffset < data->mSize) {
-      ssize_t write_amount = data->mSize - data->mCurrentWriteOffset;
-      ssize_t written;
-      written = write (fd, toWrite + data->mCurrentWriteOffset,
-                       write_amount);
-      if(written > 0) {
-        data->mCurrentWriteOffset += written;
-      }
-      if (written != write_amount) {
-        break;
-      }
-    }
-
-    if(data->mCurrentWriteOffset != data->mSize) {
-      MessageLoopForIO::current()->WatchFileDescriptor(
-        fd,
-        false,
-        MessageLoopForIO::WATCH_WRITE,
-        &w->mWriteWatcher,
-        this);
-      return;
-    }
-    {
-      MutexAutoLock lock(mMutex);
-      w->mOutgoingQ.RemoveElementAt(0);
-    }
-    delete data;
-  }
-}
-
-
 int
-OpenSocket(int type, const char* aAddress, int channel, bool auth, bool encrypt)
+OpenSocket(int aType, const char* aAddress, int aChannel, bool aAuth, bool aEncrypt)
 {
   MOZ_ASSERT(!NS_IsMainThread());
   int lm = 0;
   int fd = -1;
   int sndbuf;
 
-  switch (type) {
+  switch (aType) {
   case TYPE_RFCOMM:
     fd = socket(PF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
     break;
@@ -325,16 +183,16 @@ OpenSocket(int type, const char* aAddress, int channel, bool auth, bool encrypt)
   }
 
   /* kernel does not yet support LM for SCO */
-  switch (type) {
+  switch (aType) {
   case TYPE_RFCOMM:
-    lm |= auth ? RFCOMM_LM_AUTH : 0;
-    lm |= encrypt ? RFCOMM_LM_ENCRYPT : 0;
-    lm |= (auth && encrypt) ? RFCOMM_LM_SECURE : 0;
+    lm |= aAuth ? RFCOMM_LM_AUTH : 0;
+    lm |= aEncrypt ? RFCOMM_LM_ENCRYPT : 0;
+    lm |= (aAuth && aEncrypt) ? RFCOMM_LM_SECURE : 0;
     break;
   case TYPE_L2CAP:
-    lm |= auth ? L2CAP_LM_AUTH : 0;
-    lm |= encrypt ? L2CAP_LM_ENCRYPT : 0;
-    lm |= (auth && encrypt) ? L2CAP_LM_SECURE : 0;
+    lm |= aAuth ? L2CAP_LM_AUTH : 0;
+    lm |= aEncrypt ? L2CAP_LM_ENCRYPT : 0;
+    lm |= (aAuth && aEncrypt) ? L2CAP_LM_SECURE : 0;
     break;
   }
 
@@ -345,7 +203,7 @@ OpenSocket(int type, const char* aAddress, int channel, bool auth, bool encrypt)
     }
   }
 
-  if (type == TYPE_RFCOMM) {
+  if (aType == TYPE_RFCOMM) {
     sndbuf = RFCOMM_SO_SNDBUF;
     if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf))) {
       LOG("setsockopt(SO_SNDBUF) failed, throwing");
@@ -360,18 +218,12 @@ OpenSocket(int type, const char* aAddress, int channel, bool auth, bool encrypt)
   struct sockaddr *addr;
   bdaddr_t bd_address_obj;
 
-  int mPort = channel;
-
-  char mAddress[18];
-  mAddress[17] = '\0';
-  strncpy(&mAddress[0], aAddress, 17);
-
   if (get_bdaddr(aAddress, &bd_address_obj)) {
     NS_WARNING("Can't get bluetooth address!");
     return -1;
   }
 
-  switch (type) {
+  switch (aType) {
   case TYPE_RFCOMM:
     struct sockaddr_rc addr_rc;
     addr = (struct sockaddr *)&addr_rc;
@@ -379,7 +231,7 @@ OpenSocket(int type, const char* aAddress, int channel, bool auth, bool encrypt)
 
     memset(addr, 0, addr_sz);
     addr_rc.rc_family = AF_BLUETOOTH;
-    addr_rc.rc_channel = mPort;
+    addr_rc.rc_channel = aChannel;
     memcpy(&addr_rc.rc_bdaddr, &bd_address_obj, sizeof(bdaddr_t));
     break;
   case TYPE_SCO:
@@ -406,57 +258,216 @@ OpenSocket(int type, const char* aAddress, int channel, bool auth, bool encrypt)
     return -1;
   }
 
-  // Match android_bluetooth_HeadsetBase.cpp line 384
-  // Skip many lines
   return fd;
 }
 
-static void
-StartManager(Monitor* aMonitor, bool* aSuccess)
-{
-  sManager = new SocketManager();
-  {
-    MonitorAutoLock lock(*aMonitor);
-    lock.Notify();
-  }
-};
-
 int
-GetNewSocket(int type, const char* aAddress, int channel, bool auth, bool encrypt)
-{
-  if (!sManager)
-  {
-    Monitor monitor("StartManager.monitor");
-    bool success;
-    {
-      MonitorAutoLock lock(monitor);
-      XRE_GetIOMessageLoop()->PostTask(
-        FROM_HERE,
-        NewRunnableFunction(StartManager, &monitor, &success));
-      lock.Wait();
-    }
-  }
-  return OpenSocket(type, aAddress, channel, auth, encrypt);
-}
-
-int
-CloseSocket(int aFd)
+CloseSocketInternal(int aFd)
 {
   // This won't block since we are making sockets O_NONBLOCK
   return close(aFd);
 }
 
-void
-AddSocketWatcher(SocketConsumer* s, int fd)
+bool
+SocketManager::AddSocket(SocketConsumer* aConsumer, int aFd)
 {
-  sManager->AddSocket(s, fd);
+  // Set close-on-exec bit.
+  int flags = fcntl(aFd, F_GETFD);
+  if (-1 == flags) {
+    return false;
+  }
+
+  flags |= FD_CLOEXEC;
+  if (-1 == fcntl(aFd, F_SETFD, flags)) {
+    return false;
+  }
+
+  // Select non-blocking IO.
+  if (-1 == fcntl(aFd, F_SETFL, O_NONBLOCK)) {
+    return false;
+  }
+
+  aConsumer->mFd = aFd;
+  SocketWatcher* w = new SocketWatcher(aConsumer);
+  mWatchers.Put(aFd, w);
+  if (!mIOLoop->WatchFileDescriptor(aFd,
+                                    true,
+                                    MessageLoopForIO::WATCH_READ,
+                                    &(mWatchers.Get(aFd)->mReadWatcher),
+                                    this)) {
+    return false;
+  }
+  return true;
+}
+
+bool
+SocketManager::RemoveSocket(SocketConsumer* aConsumer)
+{
+  mWatchers.Remove(aConsumer->mFd);
+  CloseSocketInternal(aConsumer->mFd);
+  return true;
 }
 
 void
-RemoveSocketWatcher(SocketConsumer* s)
+SocketManager::OnFileCanReadWithoutBlocking(int aFd)
 {
-  sManager->RemoveSocket(s);
+  // Keep reading data until either
+  //
+  //   - mIncoming is completely read
+  //     If so, sConsumer->MessageReceived(mIncoming.forget())
+  //
+  //   - mIncoming isn't completely read, but there's no more
+  //     data available on the socket
+  //     If so, break;
+
+  while (true) {
+    if (!mIncoming) {
+      mIncoming = new SocketRawData();
+      ssize_t ret = read(aFd, mIncoming->mData, SocketRawData::MAX_DATA_SIZE);
+      if (ret <= 0) {
+        if (ret == -1) {
+          if (errno == EINTR) {
+            continue; // retry system call when interrupted
+          }
+          else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            return; // no data available: return and re-poll
+          }
+          // else fall through to error handling on other errno's
+        }
+        LOG("Cannot read from network, error %d\n", (int)ret);
+        // At this point, assume that we can't actually access
+        // the socket anymore, and start a reconnect loop.
+        mIncoming.forget();
+        // mReadWatchers.Get(aFd)->StopWatchingFileDescriptor();
+        // mWriteWatchers.Get(aFd)->StopWatchingFileDescriptor();
+        close(aFd);
+        return;
+      }
+      mIncoming->mData[ret] = 0;
+      mIncoming->mSize = ret;
+      nsRefPtr<SocketReceiveTask> t =
+        new SocketReceiveTask(mWatchers.Get(aFd)->mConsumer, mIncoming.forget());
+      NS_DispatchToMainThread(t);
+      if (ret < ssize_t(SocketRawData::MAX_DATA_SIZE)) {
+        return;
+      }
+    }
+  }
 }
 
+void
+SocketManager::OnFileCanWriteWithoutBlocking(int aFd)
+{
+  // Try to write the bytes of mCurrentRilRawData.  If all were written, continue.
+  //
+  // Otherwise, save the byte position of the next byte to write
+  // within mCurrentRilRawData, and request another write when the
+  // system won't block.
+  //
+  while (true) {
+    SocketRawData* data;
+    SocketWatcher* w;
+    {
+      MutexAutoLock lock(mMutex);
+      w = mWatchers.Get(aFd);
+      if (w->mOutgoingQ.IsEmpty()) {
+        return;
+      }
+      data = w->mOutgoingQ.ElementAt(0);
+    }
+    const uint8_t *toWrite;
+
+    toWrite = data->mData;
+ 
+    while (data->mCurrentWriteOffset < data->mSize) {
+      ssize_t write_amount = data->mSize - data->mCurrentWriteOffset;
+      ssize_t written;
+      written = write (aFd, toWrite + data->mCurrentWriteOffset,
+                       write_amount);
+      if(written > 0) {
+        data->mCurrentWriteOffset += written;
+      }
+      if (written != write_amount) {
+        break;
+      }
+    }
+
+    if(data->mCurrentWriteOffset != data->mSize) {
+      MessageLoopForIO::current()->WatchFileDescriptor(
+        aFd,
+        false,
+        MessageLoopForIO::WATCH_WRITE,
+        &w->mWriteWatcher,
+        this);
+      return;
+    }
+    {
+      MutexAutoLock lock(mMutex);
+      w->mOutgoingQ.RemoveElementAt(0);
+    }
+    delete data;
+  }
+}
+
+static void
+StartManager(Monitor* aMonitor)
+{
+    MOZ_ASSERT(!sManager);
+    sManager = new SocketManager();
+    {
+        MonitorAutoLock lock(*aMonitor);
+        lock.Notify();
+    }
+}
+
+void
+StartSocketManager()
+{
+  if(sManager) {
+    return;
+  }
+  Monitor monitor("StartSocketManager.monitor");
+  {
+    MonitorAutoLock lock(monitor);
+
+    XRE_GetIOMessageLoop()->PostTask(
+      FROM_HERE,
+      NewRunnableFunction(StartManager, &monitor));
+
+    lock.Wait();
+  }
+};
+
+void
+StopSocketManager()
+{
+  if(!sManager) {
+    return;
+  }
+  sManager = nullptr;
+};
+
+bool
+ConnectSocket(SocketConsumer* aConsumer, int aType, const char* aAddress, int aChannel, bool aAuth, bool aEncrypt)
+{
+  if (!sManager) {
+    NS_WARNING("Manager not yet started!");
+    return false;
+  }
+  int fd = OpenSocket(aType, aAddress, aChannel, aAuth, aEncrypt);
+  if (fd <= 0) {
+    return false;
+  }  
+  return sManager->AddSocket(aConsumer, fd);
+}
+
+bool
+CloseSocket(SocketConsumer* aConsumer)
+{
+  if(!sManager) {
+    return false;
+  }
+  return sManager->RemoveSocket(aConsumer);
+}
 } // namespace ipc
 } // namespace mozilla
