@@ -65,11 +65,11 @@ NS_IMETHODIMP
 BluetoothReplyRunnable::Run()
 {
   MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(mDOMRequest);
+  MOZ_ASSERT(mReply);
 
   nsresult rv;
-
-  MOZ_ASSERT(mDOMRequest);
-
+    
   if (mReply->type() != BluetoothReply::TBluetoothReplySuccess) {
     rv = FireReply(JSVAL_VOID);
   } else {
