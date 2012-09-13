@@ -368,6 +368,39 @@ BluetoothDevice::DisconnectHeadset(nsIDOMDOMRequest** aRequest)
   return NS_OK;
 }
 
+NS_IMETHODIMP
+BluetoothDevice::SendFile(nsIDOMDOMRequest** aRequest)
+{
+  nsCOMPtr<nsIDOMRequestService> rs = do_GetService("@mozilla.org/dom/dom-request-service;1");
+  if (!rs) {
+    NS_WARNING("No DOMRequest Service!");
+    return NS_ERROR_FAILURE;
+  }
+
+  nsCOMPtr<nsIDOMDOMRequest> req;
+  nsresult rv = rs->CreateRequest(GetOwner(), getter_AddRefs(req));
+  if (NS_FAILED(rv)) {
+    NS_WARNING("Can't create DOMRequest!");
+    return NS_ERROR_FAILURE;
+  }
+
+/*
+  nsRefPtr<BluetoothVoidReplyRunnable> result = new BluetoothVoidReplyRunnable(req);
+
+  BluetoothOppManager* opp = BluetoothOppManager::GetManager();
+
+  if (opp->SendFile(result)) {
+    LOG("[OPP] Starting connecting with headset");
+  } else {
+    LOG("[OPP] Starting connecting failed");
+  }
+*/
+
+  req.forget(aRequest);
+
+  return NS_OK;
+}
+
 NS_IMPL_EVENT_HANDLER(BluetoothDevice, propertychanged)
 NS_IMPL_EVENT_HANDLER(BluetoothDevice, connected)
 NS_IMPL_EVENT_HANDLER(BluetoothDevice, disconnected)
