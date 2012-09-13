@@ -38,7 +38,6 @@ CPPSRCS += \
   BluetoothUtils.cpp \
   BluetoothHfpManager.cpp \
   BluetoothRilListener.cpp \
-  BluetoothObexClient.cpp \
   BluetoothOppManager.cpp \
   ObexBase.cpp \
   $(NULL)

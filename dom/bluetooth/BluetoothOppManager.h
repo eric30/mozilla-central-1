@@ -11,31 +11,42 @@
 #include "BluetoothCommon.h"
 //#include "ObexBase.h"
 
+#include "mozilla/ipc/Socket.h"
+
 BEGIN_BLUETOOTH_NAMESPACE
 
 //class ObexServer;
+class BluetoothReplyRunnable;
 
 //class BluetoothOppManager : public ObexListener
-class BluetoothOppManager
+class BluetoothOppManager : public mozilla::ipc::SocketConsumer
 {
 public:
+  static const int MAX_PACKET_LENGTH = 0xFFFE; 
   static const int DEFAULT_OPP_CHANNEL = 10;
 
-  BluetoothOppManager();
   ~BluetoothOppManager();
+  static BluetoothOppManager* GetManager();
 
-  
-/*
-  void SendFile(const char* aRemoteDeviceAddr, int aChannel, char* filePath);
+  bool Connect(const nsAString& aObjectPath,
+               BluetoothReplyRunnable* aRunnable);
 
-  void Start();
-  char onConnect();
-  char onDisconnect();
-  char onPut(const ObexHeaderSet& reqHeaderSet, char* response);
+  bool SendFile(const nsAString& aFileUri);
+ 
+  void ReceiveSocketData(mozilla::ipc::SocketRawData* aMessage);
 
 private:
-  ObexServer* mServer;
-  */
+  BluetoothOppManager();
+
+  void SendConnectReqeust();
+  void SendDisconnectReqeust();
+  void SendPutReqeust(char* fileName, int fileNameLength,
+                      char* fileBody, int fileBodyLength);
+
+  bool mConnected;
+  char mRemoteObexVersion;
+  char mRemoteConnectionFlags;
+  int mRemoteMaxPacketLength;
 };
 
 END_BLUETOOTH_NAMESPACE

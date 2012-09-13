@@ -30,11 +30,16 @@ struct SocketRawData
   {
   }
   
-  SocketRawData(const char* str) :
-    mCurrentWriteOffset(0)
+  SocketRawData(const char* str) : mCurrentWriteOffset(0)
   {
     memcpy(mData, str, strlen(str));
     mSize = strlen(str);   
+  }
+
+  SocketRawData(const char* str, int size) : mCurrentWriteOffset(0)
+  {
+    memcpy(mData, str, size);
+    mSize = size;
   }
 };
 

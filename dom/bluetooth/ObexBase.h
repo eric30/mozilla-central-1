@@ -1,5 +1,5 @@
 /* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 40 -*- */
-/* vim: set ts=2 et sw=2 tw=40: */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
 * License, v. 2.0. If a copy of the MPL was not distributed with this file,
 * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -92,54 +92,53 @@ enum ObexResponseCode {
 };
 
 class ObexHeader {
-  public:
-    ObexHeader(ObexHeaderId aId, int aDataLength, const char* aData) : mId(aId)
-                                                                       , mDataLength(aDataLength)
+public:
+  ObexHeader(ObexHeaderId aId, int aDataLength, const char* aData) : mId(aId)
+                                                                   , mDataLength(aDataLength)
   {
     mData = new char[mDataLength];
 
     memcpy(mData, aData, aDataLength);
   }
 
-    ~ObexHeader()
-    {
-      if (mData != NULL) {
-        delete [] mData;
-      }
+  ~ObexHeader()
+  {
+    if (mData != NULL) {
+      delete [] mData;
     }
+  }
 
-    ObexHeaderId mId;
-    int mDataLength;
-    char* mData;
+  ObexHeaderId mId;
+  int mDataLength;
+  char* mData;
 };
 
 class ObexHeaderSet {
-  public:
-    char mOpcode;
-    ObexHeader* mHeaders[10];
-    int mCount;
+public:
+  char mOpcode;
+  ObexHeader* mHeaders[10];
+  int mCount;
 
-    ObexHeaderSet(char aOpcode) : mOpcode(aOpcode)
-                                  , mCount(0)
+  ObexHeaderSet(char aOpcode) : mOpcode(aOpcode)
+                              , mCount(0)
   {
-
   }
 
-    ~ObexHeaderSet()
-    {
-      while (mCount--) {
-        delete mHeaders[mCount];
-      }
+  ~ObexHeaderSet()
+  {
+    while (mCount--) {
+      delete mHeaders[mCount];
     }
+  }
 
-    void AddHeader(ObexHeader* aHeader)
-    {
-      mHeaders[mCount++] = aHeader;
-    }
+  void AddHeader(ObexHeader* aHeader)
+  {
+    mHeaders[mCount++] = aHeader;
+  }
 };
 
-int AppendHeaderName(char* retBuf, char* name, int length);
-int AppendHeaderBody(char* retBuf, char* data, int length);
+int AppendHeaderName(char* retBuf, const char* name, int length);
+int AppendHeaderBody(char* retBuf, const char* data, int length);
 int AppendHeaderLength(char* retBuf, int objectLength);
 int AppendHeaderConnectionId(char* retBuf, int connectionId);
 void SetObexPacketInfo(char* retBuf, char opcode, int packetLength);

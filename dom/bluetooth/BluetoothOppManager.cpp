@@ -4,8 +4,12 @@
 
 #include "BluetoothOppManager.h"
 
-#include "BluetoothObexClient.h"
-//#include "BluetoothObexServer.h"
+#include "BluetoothReplyRunnable.h"
+#include "BluetoothService.h"
+#include "BluetoothServiceUuid.h"
+
+#include "mozilla/ipc/Socket.h"
+#include "ObexBase.h"
 
 #if defined(MOZ_WIDGET_GONK)
 #include <android/log.h>
@@ -16,7 +20,25 @@
 
 USING_BLUETOOTH_NAMESPACE
 
-BluetoothOppManager::BluetoothOppManager()
+static BluetoothOppManager* sInstance = nullptr;
+static int sConnectionId = 0;
+static char sLastCommand = 0;
+
+BluetoothOppManager*
+BluetoothOppManager::GetManager()
+{
+  if (sInstance == nullptr)
+  {
+    sInstance = new BluetoothOppManager();
+  }
+
+  return sInstance;
+}
+
+BluetoothOppManager::BluetoothOppManager() : mRemoteObexVersion(0)
+                                           , mRemoteConnectionFlags(0)
+                                           , mRemoteMaxPacketLength(0)
+                                           , mConnected(false)
 {
 }
 
@@ -24,3 +46,193 @@ BluetoothOppManager::~BluetoothOppManager()
 {
 
 }
+
+bool
+BluetoothOppManager::Connect(const nsAString& aObjectPath,
+                             BluetoothReplyRunnable* aRunnable)
+{
+  BluetoothService* bs = BluetoothService::Get();
+  if (!bs) {
+    NS_WARNING("BluetoothService not available!");
+    return nullptr;
+  }
+
+  nsString serviceUuidStr =
+    NS_ConvertUTF8toUTF16(mozilla::dom::bluetooth::BluetoothServiceUuidStr::ObjectPush);
+
+  nsRefPtr<BluetoothReplyRunnable> runnable = aRunnable;
+
+  nsresult rv = bs->GetSocketViaService(aObjectPath,
+                                        serviceUuidStr,
+                                        BluetoothSocketType::RFCOMM,
+                                        true,
+                                        false,
+                                        this,
+                                        runnable);
+
+  runnable.forget();
+  return NS_FAILED(rv) ? false : true;
+}
+
+void
+BluetoothOppManager::SendConnectReqeust()
+{
+  ++sConnectionId;
+
+  // IrOBEX 1.2 3.3.1
+  // [opcode:1][length:2][version:1][flags:1][MaxPktSizeWeCanReceive:2][Headers:var]
+  char req[255] = {'\0'};
+  int currentIndex = 7;
+
+  req[3] = 0x10; // version:1.0
+  req[4] = 0x00; // flag:0x00
+  req[5] = BluetoothOppManager::MAX_PACKET_LENGTH >> 8;
+  req[6] = BluetoothOppManager::MAX_PACKET_LENGTH;
+
+  currentIndex += AppendHeaderConnectionId(&req[currentIndex], sConnectionId);
+  SetObexPacketInfo(req, ObexRequestCode::Connect, currentIndex);
+  sLastCommand = ObexRequestCode::Connect;
+
+  mozilla::ipc::SocketRawData* s = new mozilla::ipc::SocketRawData(req, currentIndex);
+  SendSocketData(s);
+
+  LOG("[Gecko] OPP sent connect request!");
+}
+
+void
+BluetoothOppManager::SendDisconnectReqeust()
+{
+  // IrOBEX 1.2 3.3.2
+  // [opcode:1][length:2][Headers:var]
+  char req[255] = {'\0'};
+  int currentIndex = 3;
+
+  SetObexPacketInfo(req, ObexRequestCode::Disconnect, currentIndex);
+  sLastCommand = ObexRequestCode::Disconnect;
+
+  mozilla::ipc::SocketRawData* s = new mozilla::ipc::SocketRawData(req, currentIndex);
+  SendSocketData(s);
+
+  LOG("[Gecko] OPP sent disconnect request!");
+}
+
+void
+BluetoothOppManager::SendPutReqeust(char* fileName, int fileNameLength, 
+                                    char* fileBody, int fileBodyLength)
+{
+
+  // IrOBEX 1.2 3.3.3
+  // [opcode:1][length:2][Headers:var]
+  if (!mConnected) return;
+
+  char* req = new char[mRemoteMaxPacketLength];
+
+  int sentFileBodyLength = 0;
+  int currentIndex = 3;
+
+  currentIndex += AppendHeaderConnectionId(&req[currentIndex], sConnectionId);
+  currentIndex += AppendHeaderName(&req[currentIndex], fileName, fileNameLength);
+  currentIndex += AppendHeaderLength(&req[currentIndex], fileBodyLength);
+
+  while (fileBodyLength > sentFileBodyLength) {
+    int packetLeftSpace = mRemoteMaxPacketLength - currentIndex - 3;
+
+    if (fileBodyLength <= packetLeftSpace) {
+      currentIndex += AppendHeaderBody(&req[currentIndex], &fileBody[sentFileBodyLength], fileBodyLength);
+      sentFileBodyLength += fileBodyLength;
+    } else {
+      currentIndex += AppendHeaderBody(&req[currentIndex], &fileBody[sentFileBodyLength], packetLeftSpace);
+      sentFileBodyLength += packetLeftSpace;
+    }
+
+    LOG("Sent file body length: %d", sentFileBodyLength);
+
+    if (sentFileBodyLength >= fileBodyLength) {
+      SetObexPacketInfo(req, ObexRequestCode::PutFinal, currentIndex);
+      sLastCommand = ObexRequestCode::PutFinal;
+    } else {
+      SetObexPacketInfo(req, ObexRequestCode::Put, currentIndex);
+      sLastCommand = ObexRequestCode::Put;
+    }
+
+    mozilla::ipc::SocketRawData* s = new mozilla::ipc::SocketRawData(req, currentIndex);
+    SendSocketData(s);
+
+    currentIndex = 3;
+  }
+
+  delete [] req;
+}
+
+void
+BluetoothOppManager::ReceiveSocketData(mozilla::ipc::SocketRawData* aMessage)
+{
+  char responseCode = aMessage->mData[0];
+  int packetLength = (((int)aMessage->mData[1]) << 8) | aMessage->mData[2];
+  int receivedLength = aMessage->mSize;
+
+  LOG("Response Code: %x, Packet Length: %d, Received Length = %d", 
+      responseCode, packetLength, receivedLength);
+
+  // Start parsing response data
+  ObexHeaderSet headerSet(sLastCommand);
+
+  if (sLastCommand == ObexRequestCode::Connect) {
+    if (responseCode != ObexResponseCode::Success) {
+      LOG("[OBEX] Connect failed");
+    } else {
+      LOG("[OBEX] Connect ok");
+
+      mRemoteObexVersion = aMessage->mData[3];
+      mRemoteConnectionFlags = aMessage->mData[4];
+      mRemoteMaxPacketLength = ((aMessage->mData[5] << 8) | aMessage->mData[6]);
+
+      ParseHeaders((const char*)&aMessage->mData[7], packetLength - 7, &headerSet);
+
+      mConnected = true;
+
+      // xxx Eric Temp
+      // xxxxxxxxxxxxxxxxxxxxx File Name and Body  
+      char tempName[18] = {0x00, 0x74, 0x00, 0x65, 0x00, 0x73, 0x00, 0x74, 0x00, 0x2e, 0x00, 0x74,
+                           0x00, 0x78, 0x00, 0x74, 0x00, 0x00};
+      char tempBody[11] = {0x45, 0x72, 0x69, 0x63, 0x20, 0x54, 0x65, 0x73, 0x74, 0x2e, 0x0a};
+
+      SendPutReqeust(tempName, 18, tempBody, 11);
+    }
+  } else if (sLastCommand == ObexRequestCode::Disconnect) {
+    if (responseCode != ObexResponseCode::Success) {
+      LOG("[OBEX] Disconnect failed");
+    } else {
+      LOG("[OBEX] Disconnect ok");
+
+      mConnected = true;
+    }
+  } else if (sLastCommand == ObexRequestCode::Put) {
+    if (responseCode != ObexResponseCode::Continue) {
+      LOG("[OBEX] Put failed");
+    } else {
+      // Put: Do nothing, just reply responsecode    
+      LOG("[OBEX] Remote device received part of file, keep sending");
+    }
+  } else if (sLastCommand == ObexRequestCode::PutFinal) {    
+    if (responseCode != ObexResponseCode::Success) {
+      LOG("[OBEX] PutFinal failed");
+    } else {
+      LOG("[OBEX] File sharing done");
+
+      // Disconnect right after connected
+      SendDisconnectReqeust();
+    }
+  }
+}
+
+bool 
+BluetoothOppManager::SendFile(const nsAString& aFileUri)
+{
+  // TODO(Eric)
+  // We have to connect, send and disconnect in order.
+  SendConnectReqeust();
+
+  return true;
+}
+

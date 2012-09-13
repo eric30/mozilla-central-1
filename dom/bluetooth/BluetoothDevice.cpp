@@ -370,7 +370,7 @@ BluetoothDevice::DisconnectHeadset(nsIDOMDOMRequest** aRequest)
 }
 
 NS_IMETHODIMP
-BluetoothDevice::SendFile(nsIDOMDOMRequest** aRequest)
+BluetoothDevice::ConnectOppServer(nsIDOMDOMRequest** aRequest)
 {
   nsCOMPtr<nsIDOMRequestService> rs = do_GetService("@mozilla.org/dom/dom-request-service;1");
   if (!rs) {
@@ -385,19 +385,26 @@ BluetoothDevice::SendFile(nsIDOMDOMRequest** aRequest)
     return NS_ERROR_FAILURE;
   }
 
-/*
   nsRefPtr<BluetoothVoidReplyRunnable> result = new BluetoothVoidReplyRunnable(req);
 
   BluetoothOppManager* opp = BluetoothOppManager::GetManager();
 
-  if (opp->SendFile(result)) {
-    LOG("[OPP] Starting connecting with headset");
+  if (opp->Connect(mPath, result)) {
+    LOG("[OPP] Starting sending file");
   } else {
-    LOG("[OPP] Starting connecting failed");
+    LOG("[OPP] Can't start sending file");
   }
 
   req.forget(aRequest);
-*/
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+BluetoothDevice::SendFile(const nsAString& aFileUri, bool* aResult)
+{
+  BluetoothOppManager* opp = BluetoothOppManager::GetManager();
+  *aResult = opp->SendFile(aFileUri);
 
   return NS_OK;
 }
