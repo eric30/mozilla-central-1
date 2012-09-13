@@ -13,6 +13,7 @@
 #include "BluetoothUtils.h"
 #include "BluetoothServiceUuid.h"
 #include "BluetoothHfpManager.h"
+#include "BluetoothOppManager.h"
 
 #include "nsIDOMDOMRequest.h"
 #include "nsDOMClassInfo.h"
@@ -394,9 +395,9 @@ BluetoothDevice::SendFile(nsIDOMDOMRequest** aRequest)
   } else {
     LOG("[OPP] Starting connecting failed");
   }
-*/
 
   req.forget(aRequest);
+*/
 
   return NS_OK;
 }
